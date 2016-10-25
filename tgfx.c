@@ -57,7 +57,7 @@ ttexture *trim_createtexture(int w, int h, int x, int y, int mode) {
 	tex->x = x;
 	tex->y = y;
 	tex->mode = mode;
-	tex->pix = calloc(w * h, sizeof(int));
+	tex->pix = calloc(w * h, sizeof(tpixel));
 
 	tpixel p = {0};
 	trim_createpixel(&p, NULL, NULL, 0);
@@ -120,6 +120,42 @@ void trim_applytexture(ttexture *s, ttexture *tex) {
 	}
 }
 
+void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr) {
+	if (!tex || !str) return;
+
+	char *p = str;
+	if (!lr) {
+		if (x < 0) {
+			p += -x;
+			x = 0;
+		}
+		if (p >= str+strlen(str) || x >= tex->w || y < 0 || y >= tex->h) return;
+	}
+	else {
+		if (x < 0) {
+			x += tex->w;
+			y--;
+		}
+		if (x >= tex->w) {
+			x -= tex->w;
+			y++;
+		}
+		if (y < 0) {
+			p += (-y * tex->w) + x;
+			x = y = 0;
+		}
+		if (p >= str+strlen(str) || y >= tex->h) return;
+	}
+
+	int i, j;
+	for (i = y; i < tex->h; i++) {
+		for (j = x; j < tex->w && *p; j++, p++) tex->pix[i*tex->w+j].ch = *p;
+		if (!lr || *p == 0) break;
+		x = 0;
+	}
+	return;
+}
+
 void trim_drawtexture(ttexture *s) {
 	if (!s) return;
 	int r, g, b;
@@ -174,4 +210,5 @@ ttexture *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode) {
 void trim_closevideo(ttexture *s) {
 	printf("\x1b[?25h\n");
 	trim_closetexture(s);
+	free(s);
 }

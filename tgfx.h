@@ -38,6 +38,7 @@ ttexture *trim_createtexture(int w, int h, int x, int y, int mode);
 
 void trim_filltexture(ttexture *tex, tpixel *p);
 void trim_applytexture(ttexture *s, ttexture *tex);
+void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr);
 void trim_drawtexture(ttexture *s);
 void trim_closetexture(ttexture *tex);
 
