@@ -2,46 +2,67 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <termios.h>
 #include <fcntl.h>
 #include <linux/input.h>
+#include <sys/stat.h>
 
 typedef unsigned char u8;
 
 int open_kbd() {
-	FILE *f = fopen("/proc/bus/input/devices", "r");
-	if (!f) return -1;
+	char path[32];
+	u8 bits[32];
+	int idx = -1, i, fd;
+	struct stat st;
 
-	fseek(f, 0, SEEK_END);
-	int sz = ftell(f);
-	rewind(f);
+	while (1) {
+		idx++;
+		sprintf(path, "/dev/input/event%d", idx);
+		if (stat(path, &st) < 0) {
+			printf("Could not find %s\n", path);
+			return -1;
+		}
 
-	char *buf = malloc(sz);
-	fread(buf, 1, sz, f);
-	fclose(f);
+		fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			printf("Could not open %s (%d)\n", path, fd);
+			continue;
+		}
 
-	printf("buf: %p, sz: %d\n", buf, sz);
+		memset(bits, 0, 32);
+		if (ioctl(fd, EVIOCGBIT(0, sizeof(bits)), bits) < 0) {
+			printf("Could not read event bits from %s\n", path);
+			close(fd);
+			continue;
+		}
 
-	char *p = strstr(buf, "keyboard");
-	if (!p) {
-		free(buf);
-		return -2;
+		// Check if the first three bytes are 0x13, 0x00 and 0x12 respectively
+		// If not, try another input device
+		for (i = 0; i < 3; i++)
+			if (bits[i] != "C0B"[i]-'0') break;
+
+		if (i == 3) break;
+		close(fd);
 	}
-
-	p = strstr(p, "event");
-	if (!p) {
-		free(buf);
-		return -3;
-	}
-
-	char path[32] = {0};
-	strcpy(path, "/dev/input/");
-	memcpy(path+strlen(path), p, strcspn(p, " \n"));
-	free(buf);
-	return open(path, O_RDONLY);
+	return fd;
 }
 
 int main() {
-	int kb_fd = open("/dev/input/event3", O_RDONLY);
+	struct termios tty, tty_old;
+
+	/* make stdin non-blocking */
+	int flags = fcntl(0, F_GETFL);
+	flags |= O_NONBLOCK;
+	fcntl(0, F_SETFL, flags);
+
+	/* turn off buffering, echo and key processing */
+	tcgetattr(0, &tty_old);
+	tty = tty_old;
+	tty.c_lflag &= ~(ICANON | ECHO | ISIG);
+	tty.c_iflag &= ~(ISTRIP | INLCR | ICRNL | IGNCR | IXON | IXOFF);
+	tcsetattr(0, TCSANOW, &tty);
+
+	int kb_fd = open_kbd();
 	if (kb_fd < 0) {
 		printf("Could not open keyboard (%d)\n", kb_fd);
 		return 1;
@@ -51,7 +72,10 @@ int main() {
 	int quit = 0;
 	while (!quit) {
 		int r = read(kb_fd, ev, sizeof(ev));
-		if (r < 0) break;
+		if (r < 0) {
+			printf("Could not read from evdev (fd: %d, r: %d)\n", kb_fd, r);
+			break;
+		}
 
 		int n_events = r / sizeof(struct input_event);
 		if (n_events < 1) {
@@ -64,6 +88,11 @@ int main() {
 			if (ev[i].code == 16) quit = 1;
 		}
 	}
+
+	flags = fcntl(0, F_GETFL);
+	flags &= ~O_NONBLOCK;
+	fcntl(0, F_SETFL, flags);
+	tcsetattr(0, TCSANOW, &tty_old);
 
 	close(kb_fd);
 	return 0;

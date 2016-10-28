@@ -1,13 +1,13 @@
 #include <stdio.h>
-#include "tkb.h"
+#include "../tkb.h"
 
 int main() {
-	kb_init();
+	trim_initkb();
 	while (1) {
-		int key = kb_read();
+		int key = trim_poll();
 		if (key) printf("%d\n", key);
 		if (key == 'q') break;
 	}
-	kb_close();
+	trim_closekb();
 	return 0;
 }
