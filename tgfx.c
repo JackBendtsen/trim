@@ -156,6 +156,10 @@ void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr) {
 	return;
 }
 
+/*
+ttexture trim_renderpolygon(tpolygon *poly) {
+	
+*/
 void trim_drawtexture(ttexture *s) {
 	if (!s) return;
 	int r, g, b;

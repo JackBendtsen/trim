@@ -9,7 +9,7 @@ This approach should work on all Unix-based systems, however.
   The second approach is by reading data from the 'evdev' interface, which is currently only supported by Linux and the latest FreeBSD builds.
 It does, however, allow for accurately deciding if a key is held or not by the event driven nature of the interface.
 */
-int trim_initkb(void) {
+void trim_initkb(void) {
 	_trim_kb_mode = TRIM_DEFKB;
 	_trim_evfd = -1;
 	_trim_old_kbst = NULL;
@@ -18,7 +18,7 @@ int trim_initkb(void) {
 	_trim_cur_kbsize = 0;
 
 	char path[32];
-	u8 bits[32];
+	unsigned char bits[32];
 	int idx = -1, i;
 	struct stat st;
 
@@ -37,6 +37,7 @@ int trim_initkb(void) {
 	tty.c_iflag &= ~(ISTRIP | INLCR | ICRNL | IGNCR | IXON | IXOFF);
 	tcsetattr(0, TCSANOW, &tty);
 
+#ifdef __linux__
 	// Attempt opening an input event device
 	while (1) {
 		idx++;
@@ -59,23 +60,25 @@ int trim_initkb(void) {
 
 		if (i == 3) {
 			_trim_kb_mode = TRIM_RAWKB;
-			return TRIM_RAWKB;
+			return /*TRIM_RAWKB*/;
 		}
 		close(_trim_evfd);
 	}
+#endif
 
 	// If one is not found, the default method of reading input from stdin will be used
-	return TRIM_DEFKB;
+	//return TRIM_DEFKB;
 }
 
 void trim_poll(void) {
 	if (_trim_cur_kbst && _trim_cur_kbsize) {
 		_trim_old_kbst = realloc(_trim_old_kbst, _trim_cur_kbsize);
-		_trim_olb_kbsize = _trim_cur_kbsize;
+		_trim_old_kbsize = _trim_cur_kbsize;
 		memcpy(_trim_old_kbst, _trim_cur_kbst, _trim_old_kbsize);
 	}
 	if (_trim_kb_mode == TRIM_DEFKB) {
 		int i;
+		for (i = 0; i < _trim_old_kbsize; i++) _trim_old_kbst[i].state = 0;
 		for (i = 0; i < _trim_cur_kbsize; i++) _trim_cur_kbst[i].state = 0;
 
 		char buf[16] = {0};
@@ -97,6 +100,7 @@ void trim_poll(void) {
 		}
 	}
 	else {
+#ifdef __linux__
 		struct input_event ev[64];
 		int r = read(_trim_evfd, ev, sizeof(ev));
 		if (r < 0) {
@@ -119,7 +123,41 @@ void trim_poll(void) {
 				_trim_cur_kbst[j].state = ev[i].state;
 			}
 		}
+#endif
 	}
+}
+
+int trim_keydown(int key) {
+	int i;
+	for (i = 0; i < _trim_cur_kbsize; i++) {
+		if (_trim_cur_kbst[i].code == key && (i >= _trim_old_kbsize ||
+		    (_trim_old_kbst[i].state == 0 && _trim_cur_kbst[i].state == 1))) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int trim_keyheld(int key) {
+	int i;
+	for (i = 0; i < _trim_cur_kbsize; i++) {
+		if (_trim_cur_kbst[i].code == key && _trim_cur_kbst[i].state == 1) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int trim_keyup(int key) {
+	int i;
+	for (i = 0; i < _trim_old_kbsize; i++) {
+		if (_trim_cur_kbst[i].code == key &&
+		    _trim_old_kbst[i].state == 1 &&
+		    _trim_cur_kbst[i].state == 0) {
+			return 1;
+		}
+	}
+	return 0;
 }
 
 // TODO: Flush evdev fd

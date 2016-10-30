@@ -28,6 +28,18 @@ typedef struct {
 	int mode;
 } ttexture;
 
+typedef struct {
+	float tx, ty; // Coordinates of a point as mapped on a texture
+	float sx, sy; // Coordinates of a point as mapped to the screen
+} tpoint;
+
+typedef struct {
+	tcolour *pix;
+	int x, y;
+	tpoint *point;
+	int n_points;
+} tpolygon;
+
 ttexture *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode);
 void trim_closevideo(ttexture *s);
 
@@ -39,6 +51,9 @@ ttexture *trim_createtexture(int w, int h, int x, int y, int mode);
 void trim_filltexture(ttexture *tex, tpixel *p);
 void trim_applytexture(ttexture *s, ttexture *tex);
 void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr);
+
+ttexture *trim_renderpolygon(tpolygon *poly);
+
 void trim_drawtexture(ttexture *s);
 void trim_closetexture(ttexture *tex);
 
