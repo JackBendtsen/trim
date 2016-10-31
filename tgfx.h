@@ -36,7 +36,7 @@ typedef struct {
 typedef struct {
 	tcolour *pix;
 	int x, y;
-	tpoint *point;
+	tpoint point[4];
 	int n_points;
 } tpolygon;
 
