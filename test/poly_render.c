@@ -21,11 +21,64 @@ typedef struct {
 } tpolygon;
 
 typedef struct {
-	
+	short magic;      // Signature ("BM")
+	char pad[2];      // Padding (not part of BMP header)
+	int file_sz;      // Size of file in bytes
+	short un1, un2;   // Unused variables (0)
+	int off;          // Byte offset of pixel data in file (54)
+	int dib_sz;       // Size of the DIB header (40)
+	int x, y;         // Dimensions of the BMP
+	short ndp;        // Number of drawing planes (1)
+	short bpp;        // Bits per pixel
+	int comp;         // Compression used (0)
+	int data_sz;      // Size of pixel data including padding
+	int x_res, y_res; // Resolution of the image in pixels per metre (0)
+	int nc;           // Number of colours (0)
+	int nic;          // Number of important colours (0)
 } bmp_t;
 
+inline int ps(void *ptr1, void *ptr2) {
+	return ptr2-ptr1;
+}
+
+void print_bmp_t(bmp_t *h) {
+	printf("sizeof(bmp_t): %d\n\n"
+		"%d - magic: %d\n"
+		"%d - file_sz: %d\n"
+		"%d - un1: %d\n"
+		"%d - un2: %d\n"
+		"%d - off: %d\n"
+		"%d - dib_sz: %d\n"
+		"%d - x: %d\n"
+		"%d - y: %d\n"
+		"%d - ndp: %d\n"
+		"%d - bpp: %d\n"
+		"%d - comp: %d\n"
+		"%d - data_sz: %d\n"
+		"%d - x_res: %d\n"
+		"%d - y_res: %d\n"
+		"%d - nc: %d\n"
+		"%d - nic: %d\n", sizeof(bmp_t),
+		ps(h, &h->magic), h->magic,
+		ps(h, &h->file_sz), h->file_sz,
+		ps(h, &h->un1), h->un1,
+		ps(h, &h->un2), h->un2,
+		ps(h, &h->off), h->off,
+		ps(h, &h->dib_sz), h->dib_sz,
+		ps(h, &h->x), h->x,
+		ps(h, &h->y), h->y,
+		ps(h, &h->ndp), h->ndp,
+		ps(h, &h->bpp), h->bpp,
+		ps(h, &h->comp), h->comp,
+		ps(h, &h->data_sz), h->data_sz,
+		ps(h, &h->x_res), h->x_res,
+		ps(h, &h->y_res), h->y_res,
+		ps(h, &h->nc), h->nc,
+		ps(h, &h->nic), h->nic);
+}
+
 tcolour *openbmp(char *name, int *w, int *h) {
-	if (!name || !w || !h) return -1;
+	if (!name || !w || !h) return NULL;
 
 	FILE *f = fopen(name, "rb");
 	if (!f) {
@@ -46,21 +99,29 @@ tcolour *openbmp(char *name, int *w, int *h) {
 	fclose(f);
 
 	bmp_t hdr = {0};
-	memcpy(&hdr, buf, sizeof(bmp_t));
-	if (!memcmp(hdr.magic, "BM", 2)) {
+	int fo = ps(&hdr, &hdr.file_sz);
+	printf("%d\n", sizeof(hdr));
+	memcpy(&hdr + fo, buf + 2, sizeof(bmp_t) - fo);
+	print_bmp_t(&hdr);
+
+	int err = 0;
+	if (memcmp(buf, "BM", 2)) {
 		printf("\"%s\" is not a BMP file\n", name);
-		free(buf);
-		return NULL;
+		err = 1;
 	}
-
-	if (hdr.bpp != 24 && hdr.bpp != 32) {
-		printf("\"%s\" is not a 24-bit or 32-bit BMP (bpp: %d)\n", name, hdr.bpp);
-		free(buf);
-		return NULL;
-	}
-
-	if (hdr.x < 1 || hdr.y < 1) {
+	else if (hdr.x < 1 || hdr.y < 1) {
 		printf("\"%s\" has invalid dimensions (%dx%d)\n", name, hdr.x, hdr.y);
+		err = 1;
+	}
+	else if (hdr.bpp != 24 && hdr.bpp != 32) {
+		printf("\"%s\" is not a 24-bit or 32-bit BMP (ndp: %d)\n", name, hdr.ndp);
+		err = 1;
+	}
+	else if (hdr.comp) {
+		printf("Compression is not supported by this program\n");
+		err = 1;
+	}
+	if (err) {
 		free(buf);
 		return NULL;
 	}
@@ -76,11 +137,11 @@ tcolour *openbmp(char *name, int *w, int *h) {
 	}
 
 	tcolour *img = calloc(hdr.x * hdr.y, sizeof(tcolour));
-	int i, j, o = bpp == 24 ? -1 : 0;
+	int i, j;
 	for (i = 0; i < hdr.y; i++) {
 		u8 *ptr = buf + (hdr.y-i-1) * xr + hdr.off;
 		for (j = 0; j < xr; j += hdr.bpp/8) {
-			tcolour p = {o ? 0xff : ptr[j], ptr[j+o+1], ptr[j+o+2], ptr[j+o+3]};
+			tcolour p = {ptr[j+2], ptr[j+1], ptr[j], hdr.bpp == 32 ? ptr[j+3] : 0xff};
 			memcpy(img + (ptr-buf-hdr.off) + (j / (hdr.bpp/8)), &p, sizeof(tcolour));
 		}
 	}
@@ -92,9 +153,39 @@ tcolour *openbmp(char *name, int *w, int *h) {
 
 void savebmp(char *name, tcolour *img, int w, int h) {
 	if (!name || !img) return;
-	
-}
 
+	int sz = w*h*4;
+	bmp_t hdr = {0};
+	memcpy(&hdr.magic, "BM", 2);
+	hdr.file_sz = sz + 54;
+	hdr.off = 54;
+	hdr.dib_sz = 40;
+	hdr.x = w;
+	hdr.y = h;
+	hdr.ndp = 1;
+	hdr.bpp = 32;
+	hdr.data_sz = sz;
+
+	FILE *f = fopen(name, "wb");
+	if (!f) return;
+	fwrite(&hdr, sizeof(bmp_t), 1, f);
+
+	u8 *out = malloc(sz);
+	int i, j, p = 0;
+	for (i = h-1; i >= 0; i--) {
+		for (j = 0; j < w; j++, p += 4) {
+			out[p] = img[i*w + j].b;
+			out[p+1] = img[i*w + j].g;
+			out[p+2] = img[i*w + j].r;
+			out[p+3] = img[i*w + j].a;
+		}
+	}
+
+	fwrite(out, 1, sz, f);
+	fclose(f);
+	free(out);
+}
+/*
 tcolour *trim_renderpolygon(tpolygon *p, int *rx, int *ry) {
 	if (!p || !rx || !ry) return NULL;
 
@@ -105,14 +196,14 @@ tcolour *trim_renderpolygon(tpolygon *p, int *rx, int *ry) {
 
 	int i;
 	for (i = 0; i 
-
+*/
 float *get_coordset(char *str, int *s) {
 	if (!str || !s) return NULL;
 	char *ptr = str;
 	float *set = NULL;
 	int sz = 0;
 	while (ptr < str+strlen(str)) {
-		float f = strtof(ptr, &ptr);
+		float f = strtod(ptr, &ptr);
 		set = realloc(set, ++sz * sizeof(float));
 		set[sz-1] = f;
 		while (*ptr &&
@@ -163,7 +254,7 @@ int main(int argc, char **argv) {
 	tpolygon poly = {0};
 	poly.n_vertices = inset_sz/2;
 	int i;
-	for (i = 0; i < poly.n_coords; i++) {
+	for (i = 0; i < poly.n_vertices; i++) {
 		poly.vertex[i].tx = inset[i*2];
 		poly.vertex[i].ty = inset[i*2+1];
 		poly.vertex[i].sx = outset[i*2];
@@ -175,7 +266,7 @@ int main(int argc, char **argv) {
 	int x, y;
 	tcolour *img = openbmp(argv[1], &x, &y);
 	if (!img) return 6;
-
+/*
 	poly.pix = img;
 	poly.x = x;
 	poly.y = y;
@@ -184,8 +275,8 @@ int main(int argc, char **argv) {
 	tcolour *render = trim_renderpolygon(&poly, &rx, &ry);
 	free(img);
 	if (!render) return 7;
-
-	savebmp(argv[2], render, &rx, &ry);
-	free(render);
+*/
+	savebmp(argv[2], img, x, y);
+	free(img);
 	return 0;
 }
