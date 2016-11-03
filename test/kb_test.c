@@ -14,7 +14,7 @@ int print_keys() {
 }
 
 int main() {
-	trim_initkb();
+	trim_initkb(TRIM_DEFKB);
 	int quit = 0;
 	while (!quit) {
 		trim_poll();

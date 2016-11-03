@@ -1,7 +1,7 @@
 #include "../tkb.h"
 
 int main() {
-	trim_initkb();
+	trim_initkb(TRIM_DEFKB);
 	printf("| |");
 	fflush(stdout);
 
@@ -11,7 +11,7 @@ int main() {
 
 	int i, p = 0, update = 0;
 	while (1) {
-		trim_poll();
+		trim_kbwait();
 		if (trim_keydown(0x1b)) break;
 		if (trim_keydown(TKEY_UP)) {
 			str[p]++;

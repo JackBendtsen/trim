@@ -29,6 +29,15 @@ int trim_to256(tcolour *c) {
 	return ((lum * 0x18) / 256) + 0xe8;
 }
 
+int trim_to16(tcolour *c) {
+	int r = ((int)c->r * (int)c->a) / 0xff;
+	int g = ((int)c->g * (int)c->a) / 0xff;
+	int b = ((int)c->b * (int)c->a) / 0xff;
+
+	int lum = (r+g+b) / 3;
+	
+	
+
 void trim_createpixel(tpixel *p, tcolour *bg, tcolour *fg, char ch) {
 	if (!p) return;
 
@@ -115,7 +124,7 @@ void trim_applytexture(ttexture *s, ttexture *tex) {
 			
 			trim_blendcolour(&dst->bg, &src->bg);
 			trim_blendcolour(&dst->fg, &src->fg);
-			dst->ch = src->ch;
+			if (src->ch) dst->ch = src->ch;
 		}
 	}
 }
@@ -149,8 +158,11 @@ void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr) {
 
 	int i, j;
 	for (i = y; i < tex->h; i++) {
-		for (j = x; j < tex->w && *p; j++, p++) tex->pix[i*tex->w+j].ch = *p;
-		if (!lr || *p == 0) break;
+		for (j = x; j < tex->w && *p; j++, p++) {
+			if (*p == '\n') break;
+			tex->pix[i*tex->w+j].ch = *p;
+		}
+		if (*p != '\n' && (!lr || *p == 0)) break;
 		x = 0;
 	}
 	return;

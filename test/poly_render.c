@@ -21,8 +21,6 @@ typedef struct {
 } tpolygon;
 
 typedef struct {
-	short magic;      // Signature ("BM")
-	char pad[2];      // Padding (not part of BMP header)
 	int file_sz;      // Size of file in bytes
 	short un1, un2;   // Unused variables (0)
 	int off;          // Byte offset of pixel data in file (54)
@@ -36,14 +34,17 @@ typedef struct {
 	int nc;           // Number of colours (0)
 	int nic;          // Number of important colours (0)
 } bmp_t;
+/*
+Note: this struct does not include the BMP signature as it is a 2-byte field by itself,
+      thus screwing up the entire struct's byte alignment
+*/
 
-inline int ps(void *ptr1, void *ptr2) {
+int ps(void *ptr1, void *ptr2) {
 	return ptr2-ptr1;
 }
 
 void print_bmp_t(bmp_t *h) {
 	printf("sizeof(bmp_t): %d\n\n"
-		"%d - magic: %d\n"
 		"%d - file_sz: %d\n"
 		"%d - un1: %d\n"
 		"%d - un2: %d\n"
@@ -59,7 +60,6 @@ void print_bmp_t(bmp_t *h) {
 		"%d - y_res: %d\n"
 		"%d - nc: %d\n"
 		"%d - nic: %d\n", sizeof(bmp_t),
-		ps(h, &h->magic), h->magic,
 		ps(h, &h->file_sz), h->file_sz,
 		ps(h, &h->un1), h->un1,
 		ps(h, &h->un2), h->un2,
@@ -99,9 +99,7 @@ tcolour *openbmp(char *name, int *w, int *h) {
 	fclose(f);
 
 	bmp_t hdr = {0};
-	int fo = ps(&hdr, &hdr.file_sz);
-	printf("%d\n", sizeof(hdr));
-	memcpy(&hdr + fo, buf + 2, sizeof(bmp_t) - fo);
+	memcpy(&hdr, buf+2, sizeof(bmp_t));
 	print_bmp_t(&hdr);
 
 	int err = 0;
@@ -142,7 +140,7 @@ tcolour *openbmp(char *name, int *w, int *h) {
 		u8 *ptr = buf + (hdr.y-i-1) * xr + hdr.off;
 		for (j = 0; j < xr; j += hdr.bpp/8) {
 			tcolour p = {ptr[j+2], ptr[j+1], ptr[j], hdr.bpp == 32 ? ptr[j+3] : 0xff};
-			memcpy(img + (ptr-buf-hdr.off) + (j / (hdr.bpp/8)), &p, sizeof(tcolour));
+			memcpy(img + (i * hdr.x) + (j / (hdr.bpp/8)), &p, sizeof(tcolour));
 		}
 	}
 	*w = hdr.x;
@@ -155,8 +153,9 @@ void savebmp(char *name, tcolour *img, int w, int h) {
 	if (!name || !img) return;
 
 	int sz = w*h*4;
+	char *magic = "BM";
 	bmp_t hdr = {0};
-	memcpy(&hdr.magic, "BM", 2);
+
 	hdr.file_sz = sz + 54;
 	hdr.off = 54;
 	hdr.dib_sz = 40;
@@ -168,6 +167,7 @@ void savebmp(char *name, tcolour *img, int w, int h) {
 
 	FILE *f = fopen(name, "wb");
 	if (!f) return;
+	fwrite(magic, 1, 2, f);
 	fwrite(&hdr, sizeof(bmp_t), 1, f);
 
 	u8 *out = malloc(sz);

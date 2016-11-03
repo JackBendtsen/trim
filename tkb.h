@@ -13,6 +13,7 @@
 
 #ifdef __linux__
   #include <linux/kd.h>
+  #include <linux/input.h>
 #endif
 
 #define TKEY_UP    0x1b5b41
@@ -25,6 +26,7 @@
 
 int _trim_kb_mode;
 int _trim_evfd;
+fd_set _trim_fdset;
 
 typedef struct {
 	int code;
@@ -38,8 +40,9 @@ int _trim_cur_kbsize;
 
 struct termios _tty_old;
 
-void trim_initkb(void);
-void trim_poll(void);
+void trim_initkb(int kb_mode);
+void trim_kbpoll(void);
+int trim_kbwait(void);
 int trim_keydown(int key);
 int trim_keyheld(int key);
 int trim_keyup(int key);
