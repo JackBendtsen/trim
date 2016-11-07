@@ -1,5 +1,60 @@
 #include "tgfx.h"
 
+typedef struct scaler scaler;
+
+struct scaler {
+	int size;
+	int len;
+	float factor;
+
+	int pos;
+	int idx;
+	float value;
+
+	scaler *prev;
+	scaler *next;
+
+	void (*func)(void *dst, void *src, scaler *sd);
+};
+
+void scale_data(void *dst, void *src, scaler *sd) {
+	if (!dst || !src || !sd) return;
+
+	float pos = 0.0, factor = sd->factor;
+	int start = 0, end = sd->size, dir = 1;
+	if (factor < 0.0) {
+		start = sd->size-1;
+		end = -1;
+		dir = -1;
+		factor = -factor;
+	}
+
+	int i;
+	for (i = start; i != end; i += dir) {
+		float span_left = factor;
+		while (span_left > 0.0) {
+			int p = (int)pos;
+			float block = 1.0 - (pos - (float)p);
+			float amount = span_left;
+			if (block < span_left) {
+				amount = block;
+				pos += amount;
+				span_left -= amount;
+			}
+			else {
+				pos += span_left;
+				span_left = 0.0;
+			}
+			sd->pos = p;
+			sd->idx = i;
+			sd->value = amount;
+
+			scale_data(dst, src, sd->next);
+			if (sd->func) sd->func(dst, src, sd);
+		}
+	}
+}
+
 void get_rgb(int c, int *r, int *g, int *b) {
 	if (r) *r = (c >> 16) & 0xff;
 	if (g) *g = (c >> 8) & 0xff;
@@ -28,7 +83,7 @@ int trim_to256(tcolour *c) {
 	}
 	return ((lum * 0x18) / 256) + 0xe8;
 }
-
+/*
 int trim_to16(tcolour *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
 	int g = ((int)c->g * (int)c->a) / 0xff;
@@ -37,7 +92,7 @@ int trim_to16(tcolour *c) {
 	int lum = (r+g+b) / 3;
 	
 	
-
+*/
 void trim_createpixel(tpixel *p, tcolour *bg, tcolour *fg, char ch) {
 	if (!p) return;
 
@@ -51,40 +106,63 @@ void trim_createpixel(tpixel *p, tcolour *bg, tcolour *fg, char ch) {
 	p->ch = ch;
 }
 
-void trim_filltexture(ttexture *tex, tpixel *p) {
-	if (!tex || !p) return;
+void trim_fillsprite(tsprite *spr, tpixel *p) {
+	if (!spr) return;
+
+	tpixel pixel = {0};
+	if (!p) trim_createpixel(&pixel, NULL, NULL, ' ');
+	else memcpy(&pixel, p, sizeof(tpixel));
+
 	int i;
-	for (i = 0; i < tex->w * tex->h; i++) memcpy(&tex->pix[i], p, sizeof(tpixel));
+	for (i = 0; i < spr->w * spr->h; i++) memcpy(&spr->pix[i], &pixel, sizeof(tpixel));
 }
 
-ttexture *trim_createtexture(int w, int h, int x, int y, int mode) {
+tsprite *trim_createsprite(int w, int h, int x, int y, int mode) {
 	if (w < 1 || h < 1 || x < 0 || y < 0 || mode < 0) return NULL;
 
-	ttexture *tex = calloc(1, sizeof(ttexture));
-	tex->w = w;
-	tex->h = h;
-	tex->x = x;
-	tex->y = y;
-	tex->mode = mode;
-	tex->pix = calloc(w * h, sizeof(tpixel));
+	tsprite *spr = calloc(1, sizeof(tsprite));
+	spr->w = w;
+	spr->h = h;
+	spr->x = x;
+	spr->y = y;
+	spr->mode = mode;
+	spr->pix = calloc(w * h, sizeof(tpixel));
 
 	tpixel p = {0};
 	trim_createpixel(&p, NULL, NULL, 0);
-	trim_filltexture(tex, &p);
-	return tex;
+	trim_fillsprite(spr, &p);
+	return spr;
+}
+
+FILE *debug = NULL;
+
+void debug_colour(tcolour *c, char *name) {
+	if (!debug) return;
+	fprintf(debug,
+		"%s:\n"
+		"  r = %d\n"
+		"  g = %d\n"
+		"  b = %d\n"
+		"  a = %d\n",
+		name ? name : "colour", c->r, c->g, c->b, c->a);
+}
+
+void debug_pixel(tpixel *p) {
+	if (!debug) return;
+	debug_colour(&p->bg, "bg");
+	debug_colour(&p->fg, "fg");
+	fprintf(debug, "ch: '%c'\n\n", p->ch);
 }
 
 void trim_blendcolour(tcolour *dst, tcolour *src) {
 	if (!dst) return;
 
-	u8 *dst_p[] = {&dst->r, &dst->g, &dst->b};
-	u8 src_p[3] = {0};
+	u8 *dst_p = (u8*)dst;
+	u8 src_p[4] = {0};
 	//float dst_a;
 	float src_a;
 	if (src) {
-		src_p[0] = src->r;
-		src_p[1] = src->g;
-		src_p[2] = src->b;
+		memcpy(&src_p, src, sizeof(tcolour));
 		//dst_a = (float)dst->a / 255.0;
 		src_a = (float)src->a / 255.0;
 	}
@@ -95,42 +173,62 @@ void trim_blendcolour(tcolour *dst, tcolour *src) {
 
 	int i;
 	for (i = 0; i < 3; i++) {
-		float dst_chn = (float)(*dst_p[i]) / 255.0;
+		float dst_chn = (float)(dst_p[i]) / 255.0;
 		float src_chn = (float)(src_p[i]) / 255.0;
 
 		dst_chn += src_chn * src_a;
-		*dst_p[i] = (u8)(dst_chn * 255.0);
+		dst_p[i] = (u8)(dst_chn * 255.0);
 	}
 }
 
-void trim_applytexture(ttexture *s, ttexture *tex) {
-	if (!s || !tex) return;
-	if (tex->x + tex->w <= 0 || tex->x >= s->w) return;
-	if (tex->y + tex->h <= 0 || tex->y >= s->h) return;
+void trim_applysprite(tsprite *dst, tsprite *src) {
+	if (!dst || !src) return;
+	if (src->x + src->w <= 0 || src->x >= dst->w) return;
+	if (src->y + src->h <= 0 || src->y >= dst->h) return;
+
+	if (!debug) debug = fopen("as_debug.txt", "w");
+	//fprintf(debug, "dst: %p, 
 
 	int ox = 0, oy = 0;
-	if (tex->x < 0) ox = -tex->x;
-	if (tex->y < 0) oy = -tex->y;
+	if (src->x < 0) ox = -src->x;
+	if (src->y < 0) oy = -src->y;
 
-	int lx = tex->w, ly = tex->h;
-	if (tex->x + tex->w > s->w) lx = s->w - tex->x - ox;
-	if (tex->y + tex->h > s->h) ly = s->h - tex->y - oy;
+	int lx = src->w, ly = src->h;
+	if (src->x + src->w > dst->w) lx = dst->w - src->x - ox;
+	if (src->y + src->h > dst->h) ly = dst->h - src->y - oy;
 
 	int i, j;
 	for (i = oy; i < ly; i++) {
 		for (j = ox; j < lx; j++) {
-			tpixel *dst = &s->pix[(i-oy) * lx + (j-ox)];
-			tpixel *src = &tex->pix[i*lx + j];
-			
-			trim_blendcolour(&dst->bg, &src->bg);
-			trim_blendcolour(&dst->fg, &src->fg);
-			if (src->ch) dst->ch = src->ch;
+			int d_idx = (i-oy) * lx + (j-ox);
+			int s_idx = i*lx + j;
+			//fprintf(debug, "src idx: %d, dst idx: %d\n\n", s_idx, d_idx);
+
+			tpixel *dp = &dst->pix[d_idx];
+			tpixel *sp = &src->pix[s_idx];
+/*
+			fprintf(debug, "old dp:\n");
+			debug_pixel(dp);
+			fprintf(debug, "old sp:\n");
+			debug_pixel(sp);
+*/
+			trim_blendcolour(&dp->bg, &sp->bg);
+			trim_blendcolour(&dp->fg, &sp->fg);
+			if (sp->ch) dp->ch = sp->ch;
+/*
+			fprintf(debug, "new dp:\n");
+			debug_pixel(dp);
+			fprintf(debug, "new sp:\n");
+			debug_pixel(sp);
+*/
 		}
 	}
+
+	fprintf(debug, "-------------------\n");
 }
 
-void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr) {
-	if (!tex || !str) return;
+void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr) {
+	if (!spr || !str) return;
 
 	char *p = str;
 	if (!lr) {
@@ -138,29 +236,29 @@ void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr) {
 			p += -x;
 			x = 0;
 		}
-		if (p >= str+strlen(str) || x >= tex->w || y < 0 || y >= tex->h) return;
+		if (p >= str+strlen(str) || x >= spr->w || y < 0 || y >= spr->h) return;
 	}
 	else {
 		if (x < 0) {
-			x += tex->w;
+			x += spr->w;
 			y--;
 		}
-		if (x >= tex->w) {
-			x -= tex->w;
+		if (x >= spr->w) {
+			x -= spr->w;
 			y++;
 		}
 		if (y < 0) {
-			p += (-y * tex->w) + x;
+			p += (-y * spr->w) + x;
 			x = y = 0;
 		}
-		if (p >= str+strlen(str) || y >= tex->h) return;
+		if (p >= str+strlen(str) || y >= spr->h) return;
 	}
 
 	int i, j;
-	for (i = y; i < tex->h; i++) {
-		for (j = x; j < tex->w && *p; j++, p++) {
+	for (i = y; i < spr->h; i++) {
+		for (j = x; j < spr->w && *p; j++, p++) {
 			if (*p == '\n') break;
-			tex->pix[i*tex->w+j].ch = *p;
+			spr->pix[i*spr->w+j].ch = *p;
 		}
 		if (*p != '\n' && (!lr || *p == 0)) break;
 		x = 0;
@@ -168,11 +266,102 @@ void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr) {
 	return;
 }
 
-/*
-ttexture trim_renderpolygon(tpolygon *poly) {
-	
-*/
-void trim_drawtexture(ttexture *s) {
+void resize_pixel(void *dst, void *src, scaler *sd) {
+	tcolour *d = (tcolour*)dst;
+	tcolour *s = (tcolour*)src;
+
+	// sd contains info about x whereas sd->prev contains info about y
+	float area = sd->value * sd->prev->value;
+
+	int s_idx = sd->prev->idx * sd->size + sd->idx;
+
+	int d_width = sd->size * sd->factor;
+	if (d_width < 0) d_width = -d_width;
+	int d_idx = sd->prev->pos * d_width + sd->pos;
+
+	u8 *d_pix = (u8*)(&d[d_idx]);
+	u8 *s_pix = (u8*)(&s[s_idx]);
+
+	int i;
+	for (i = 0; i < 4; i++) {
+		float f = (float)d_pix[i] + (float)s_pix[i] * area;
+		if (f > 255.0) f = 255.0;
+		if (f < 0.0) f = 0.0;
+		d_pix[i] = (u8)f;
+	}
+}
+
+void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h) {
+	if (!dst || !src || !src->img || src->w < 1 || src->h < 1) return;
+
+	if (dst->img) free(dst->img);
+
+	if (w == 0.0 || h == 0.0) {
+		dst->img = NULL;
+		return;
+	}
+
+	float x_sc = (float)w / (float)src->w;
+	if (w < 0) w = -w;
+	dst->w = w;
+
+	float y_sc = (float)h / (float)src->h;
+	if (h < 0) h = -h;
+	dst->h = h;
+
+	dst->img = calloc(dst->w * dst->h, sizeof(tcolour));
+
+	scaler w_rs = {0};
+	scaler h_rs = {0};
+
+	w_rs.size = src->w;
+	w_rs.factor = x_sc;
+	w_rs.func = resize_pixel;
+	w_rs.prev = &h_rs;
+
+	h_rs.size = src->h;
+	h_rs.factor = y_sc;
+	h_rs.next = &w_rs;
+
+	scale_data(dst->img, src->img, &h_rs);
+}
+
+void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h) {
+	if (!spr || !tex) return;
+
+	ttexture sc_tex = {0};
+	trim_scaletexture(&sc_tex, tex, w, h);
+
+	tsprite new_spr = {0}; // names are hard
+
+	new_spr.x = x;
+	new_spr.y = y;
+	new_spr.w = sc_tex.w;
+	new_spr.h = sc_tex.h;
+	new_spr.mode = TRIM_RGB;
+	new_spr.pix = calloc(sc_tex.w * sc_tex.h, sizeof(tpixel));
+
+	if (!debug) debug = fopen("as_debug.txt", "w");
+
+	int i;
+	for (i = 0; i < sc_tex.w * sc_tex.h; i++) {
+		debug_colour(&sc_tex.img[i], NULL);
+		memcpy(&new_spr.pix[i].bg, &sc_tex.img[i], sizeof(tcolour));
+		memset(&new_spr.pix[i].fg, 0, sizeof(tcolour));
+		new_spr.pix[i].ch = ' ';
+	}
+	free(sc_tex.img);
+
+	if (!spr->pix) {
+		memcpy(spr, &new_spr, sizeof(tsprite));
+		return;
+	}
+
+	trim_applysprite(spr, &new_spr);
+	free(new_spr.pix);
+}
+
+void trim_drawsprite(tsprite *s) {
 	if (!s) return;
 	int r, g, b;
 	int i, j, p = 0;
@@ -183,14 +372,14 @@ void trim_drawtexture(ttexture *s) {
 			trim_blendcolour(&s->pix[p].bg, NULL);
 			trim_blendcolour(&s->pix[p].fg, NULL);
 
-			if (s->mode == MODE_256) {
+			if (s->mode == TRIM_256) {
 				int bg = trim_to256(&s->pix[p].bg);
 				int fg = trim_to256(&s->pix[p].fg);
 				printf("\x1b[48;5;%dm", bg);
 				fflush(stdout);
 				printf("\x1b[38;5;%dm", fg);
 			}
-			else if (s->mode == MODE_RGB) {
+			else if (s->mode == TRIM_RGB) {
 				printf("\x1b[48;2;%d;%d;%dm", s->pix[p].bg.r, s->pix[p].bg.g, s->pix[p].bg.b);
 				fflush(stdout);
 				printf("\x1b[38;2;%d;%d;%dm", s->pix[p].fg.r, s->pix[p].fg.g, s->pix[p].fg.b);
@@ -206,13 +395,13 @@ void trim_drawtexture(ttexture *s) {
 	fflush(stdout);
 }
 
-void trim_closetexture(ttexture *tex) {
-	if (!tex) return;
-	if (tex->pix) free(tex->pix);
-	memset(tex, 0, sizeof(ttexture));
+void trim_closesprite(tsprite *s) {
+	if (!s) return;
+	if (s->pix) free(s->pix);
+	memset(s, 0, sizeof(tsprite));
 }
 
-ttexture *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode) {
+tsprite *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode) {
 	int x = (win_w - sc_w) / 2;
 	int y = (win_h - sc_h) / 2;
 	if (x < 0) x = 0;
@@ -220,11 +409,11 @@ ttexture *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode) {
 
 	printf("\x1b[?25l");
 	system("clear");
-	return trim_createtexture(sc_w, sc_h, x, y, mode);
+	return trim_createsprite(sc_w, sc_h, x, y, mode);
 }
 
-void trim_closevideo(ttexture *s) {
+void trim_closevideo(tsprite *s) {
 	printf("\x1b[?25h\n");
-	trim_closetexture(s);
+	trim_closesprite(s);
 	free(s);
 }

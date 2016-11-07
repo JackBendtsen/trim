@@ -41,8 +41,8 @@ int _trim_cur_kbsize;
 struct termios _tty_old;
 
 void trim_initkb(int kb_mode);
-void trim_kbpoll(void);
-int trim_kbwait(void);
+void trim_pollkb(void);
+int trim_getkey(void);
 int trim_keydown(int key);
 int trim_keyheld(int key);
 int trim_keyup(int key);

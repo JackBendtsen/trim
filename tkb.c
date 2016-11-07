@@ -139,11 +139,11 @@ void trim_readinput(int *key, int wait) {
 	}
 }
 
-void trim_kbpoll(void) {
+void trim_pollkb(void) {
 	trim_readinput(NULL, 0);
 }
 
-int trim_kbwait(void) {
+int trim_getkey(void) {
 	int key;
 	trim_readinput(&key, 1);
 	return _trim_cur_kbst[key].code;

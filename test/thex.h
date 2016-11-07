@@ -19,6 +19,9 @@ typedef struct {
 	u8 *scr_buf;
 	int scr_sz;
 
+	int cur_x;
+	int cur_y;
+
 	int ctrl;
 	int ro;
 

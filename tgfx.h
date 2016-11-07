@@ -5,8 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MODE_256 0
-#define MODE_RGB 1
+#define TRIM_RGB 0
+#define TRIM_256 1
+#define TRIM_16  2
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -26,35 +27,41 @@ typedef struct {
 	int w, h;
 	int x, y;
 	int mode;
+} tsprite;
+
+typedef struct {
+	tcolour *img;
+	int w, h;
 } ttexture;
 
 typedef struct {
-	float tx, ty; // Coordinates of a point as mapped on a texture
+	float tx, ty; // Coordinates of a point as mapped on a sprite
 	float sx, sy; // Coordinates of a point as mapped to the screen
 } tpoint;
 
 typedef struct {
-	tcolour *pix;
-	int x, y;
+	ttexture tex;
 	tpoint point[4];
 	int n_points;
 } tpolygon;
 
-ttexture *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode);
-void trim_closevideo(ttexture *s);
+tsprite *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode);
+void trim_closevideo(tsprite *s);
 
 void trim_blendcolour(tcolour *dst, tcolour *src);
 
 void trim_createpixel(tpixel *p, tcolour *bg, tcolour *fg, char ch);
-ttexture *trim_createtexture(int w, int h, int x, int y, int mode);
+tsprite *trim_createsprite(int w, int h, int x, int y, int mode);
 
-void trim_filltexture(ttexture *tex, tpixel *p);
-void trim_applytexture(ttexture *s, ttexture *tex);
-void trim_printtexture(ttexture *tex, char *str, int x, int y, int lr);
+void trim_fillsprite(tsprite *spr, tpixel *p);
+void trim_applysprite(tsprite *dst, tsprite *src);
+void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr);
 
-ttexture *trim_renderpolygon(tpolygon *poly);
+void trim_renderpolygon(ttexture *tex, tpolygon *poly);
+void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h);
+void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h);
 
-void trim_drawtexture(ttexture *s);
-void trim_closetexture(ttexture *tex);
+void trim_drawsprite(tsprite *s);
+void trim_closesprite(tsprite *s);
 
 #endif
