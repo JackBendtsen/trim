@@ -133,7 +133,7 @@ tsprite *trim_createsprite(int w, int h, int x, int y, int mode) {
 	trim_fillsprite(spr, &p);
 	return spr;
 }
-
+/*
 FILE *debug = NULL;
 
 void debug_colour(tcolour *c, char *name) {
@@ -153,7 +153,7 @@ void debug_pixel(tpixel *p) {
 	debug_colour(&p->fg, "fg");
 	fprintf(debug, "ch: '%c'\n\n", p->ch);
 }
-
+*/
 void trim_blendcolour(tcolour *dst, tcolour *src) {
 	if (!dst) return;
 
@@ -181,50 +181,43 @@ void trim_blendcolour(tcolour *dst, tcolour *src) {
 	}
 }
 
+FILE *debug = NULL;
+
 void trim_applysprite(tsprite *dst, tsprite *src) {
 	if (!dst || !src) return;
 	if (src->x + src->w <= 0 || src->x >= dst->w) return;
 	if (src->y + src->h <= 0 || src->y >= dst->h) return;
 
+	int dx = src->x, dy = src->y, sx = 0, sy = 0;
+	if (src->x < 0) {
+		dx = 0;
+		sx = -src->x;
+	}
+	if (src->y < 0) {
+		dy = 0;
+		sy = -src->y;
+	}
+
+	int w = src->w - sx;
+	if (w > dst->w - dx) w = dst->w - dx;
+
+	int h = src->h - sy;
+	if (h > dst->h - dy) h = dst->h - dy;
+
 	if (!debug) debug = fopen("as_debug.txt", "w");
-	//fprintf(debug, "dst: %p, 
-
-	int ox = 0, oy = 0;
-	if (src->x < 0) ox = -src->x;
-	if (src->y < 0) oy = -src->y;
-
-	int lx = src->w, ly = src->h;
-	if (src->x + src->w > dst->w) lx = dst->w - src->x - ox;
-	if (src->y + src->h > dst->h) ly = dst->h - src->y - oy;
+	fprintf(debug, "dx: %d, dy: %d, sx: %d, sy: %d, w: %d, h: %d\n", dx, dy, sx, sy, w, h);
 
 	int i, j;
-	for (i = oy; i < ly; i++) {
-		for (j = ox; j < lx; j++) {
-			int d_idx = (i-oy) * lx + (j-ox);
-			int s_idx = i*lx + j;
-			//fprintf(debug, "src idx: %d, dst idx: %d\n\n", s_idx, d_idx);
+	for (i = 0; i < h; i++) {
+		for (j = 0; j < w; j++) {
+			tpixel *dp = &dst->pix[(dy+i) * dst->w + dx+j];
+			tpixel *sp = &src->pix[(sy+i) * w + sx+j];
 
-			tpixel *dp = &dst->pix[d_idx];
-			tpixel *sp = &src->pix[s_idx];
-/*
-			fprintf(debug, "old dp:\n");
-			debug_pixel(dp);
-			fprintf(debug, "old sp:\n");
-			debug_pixel(sp);
-*/
 			trim_blendcolour(&dp->bg, &sp->bg);
 			trim_blendcolour(&dp->fg, &sp->fg);
 			if (sp->ch) dp->ch = sp->ch;
-/*
-			fprintf(debug, "new dp:\n");
-			debug_pixel(dp);
-			fprintf(debug, "new sp:\n");
-			debug_pixel(sp);
-*/
 		}
 	}
-
-	fprintf(debug, "-------------------\n");
 }
 
 void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr) {
@@ -356,11 +349,8 @@ void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h)
 	new_spr.mode = TRIM_RGB;
 	new_spr.pix = calloc(sc_tex.w * sc_tex.h, sizeof(tpixel));
 
-	if (!debug) debug = fopen("as_debug.txt", "w");
-
 	int i;
 	for (i = 0; i < sc_tex.w * sc_tex.h; i++) {
-		debug_colour(&sc_tex.img[i], NULL);
 		memcpy(&new_spr.pix[i].bg, &sc_tex.img[i], sizeof(tcolour));
 		memset(&new_spr.pix[i].fg, 0, sizeof(tcolour));
 		new_spr.pix[i].ch = ' ';
@@ -391,7 +381,7 @@ void trim_drawsprite(tsprite *s) {
 				int bg = trim_to256(&s->pix[p].bg);
 				int fg = trim_to256(&s->pix[p].fg);
 				printf("\x1b[48;5;%dm", bg);
-				fflush(stdout);
+				//fflush(stdout);
 				printf("\x1b[38;5;%dm", fg);
 			}
 			else if (s->mode == TRIM_RGB) {
@@ -399,15 +389,15 @@ void trim_drawsprite(tsprite *s) {
 				fflush(stdout);
 				printf("\x1b[38;2;%d;%d;%dm", s->pix[p].fg.r, s->pix[p].fg.g, s->pix[p].fg.b);
 			}
-			fflush(stdout);
+			//fflush(stdout);
 
 			char c = s->pix[p].ch;
 			putchar((c > 0x1f && c < 0x7f) ? c : ' ');
 			fflush(stdout);
 		}
+		printf("\x1b[0m");
+		fflush(stdout);
 	}
-	printf("\x1b[0m");
-	fflush(stdout);
 }
 
 void trim_closesprite(tsprite *s) {
@@ -428,6 +418,12 @@ tsprite *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode) {
 }
 
 void trim_closevideo(tsprite *s) {
+	printf("\x1b[0m");
+	int i, j;
+	for (i = 0; i < s->h; i++) {
+		printf("\x1b[%d;%dH", s->y+1 + i, s->x+1);
+		for (j = 0; j < s->w; j++) putchar(' ');
+	}
 	printf("\x1b[?25h\n");
 	trim_closesprite(s);
 	free(s);

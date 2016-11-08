@@ -103,11 +103,10 @@ int main() {
 	if (!img) return 1;
 
 	ttexture tex = {img, iw, ih};
-	tsprite *screen = trim_initvideo(100, 30, WIDTH, HEIGHT, TRIM_256);
+	tsprite *screen = trim_initvideo(100, 30, WIDTH, HEIGHT, TRIM_RGB);
 
-	int x = 0, y = 0, w = 0, h = 0, mode = 0;
+	int x = 0, y = 0, w = 0, h = 0, mode = 0, key = 0;
 	while (1) {
-		int key = trim_getkey();
 		if (key == 0x1b) break;
 		if (key == ' ') mode = !mode;
 
@@ -132,7 +131,7 @@ int main() {
 		if (x >= WIDTH) x = WIDTH-1;
 
 		if (y < 0) y = 0;
-		if (y >= HEIGHT) x = HEIGHT-1;
+		if (y >= HEIGHT) y = HEIGHT-1;
 
 		if (w < 0) w = 0;
 		if (w >= WIDTH) w = WIDTH-1;
@@ -147,6 +146,8 @@ int main() {
 		sprintf(msg, "x: %d, y: %d, w: %d, h: %d", x, y, w+1, h+1);
 		trim_printsprite(screen, msg, 0, 0, 0);
 		trim_drawsprite(screen);
+
+		key = trim_getkey();
 	}
 
 	free(tex.img);
