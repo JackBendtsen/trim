@@ -20,7 +20,7 @@ struct scaler {
 };
 
 void scale_data(void *dst, void *src, scaler *sd) {
-	if (!dst || !src || !sd) return;
+	if (!dst || !src || !sd || sd->factor == 0.0) return;
 
 	double pos = 0.0, factor = sd->factor;
 	int start = 0, end = sd->size, dir = 1;

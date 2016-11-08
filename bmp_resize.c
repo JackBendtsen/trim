@@ -137,23 +137,27 @@ void savebmp(char *name, tcolour *img, int w, int h) {
 }
 
 void resize_pixel(void *dst, void *src, scaler *sd) {
-	double *d = (double*)dst;
+	float *d = (float*)dst;
 	tcolour *s = (tcolour*)src;
 
 	// sd contains info about x whereas sd->prev contains info about y
-	double area = sd->value * sd->prev->value;
+	float area = sd->value * sd->prev->value;
+	if (area <= 0.0) return;
 
 	int s_idx = sd->prev->idx * sd->size + sd->idx;
 
 	int d_width = sd->size * sd->factor;
 	if (d_width < 0) d_width = -d_width;
+
 	int d_idx = sd->prev->pos * d_width + sd->pos;
+	//printf("d_idx: %d\n", d_idx);
 
 	u8 *s_pix = (u8*)(&s[s_idx]);
 
 	int i;
 	for (i = 0; i < 4; i++) {
-		double f = d[d_idx*4 + i] + (double)s_pix[i] * area;
+		float f = d[d_idx*4 + i];
+		f += (float)s_pix[i] * area;
 		if (f > 255.0) f = 255.0;
 		if (f < 0.0) f = 0.0;
 		d[d_idx*4 + i] = f;
@@ -178,19 +182,20 @@ int main(int argc, char **argv) {
 	scaler h_rs = {0};
 
 	w_rs.size = x;
-	w_rs.factor = (double)w / (double)x;
+	w_rs.factor = (float)w / (float)x;
 	w_rs.func = resize_pixel;
 	w_rs.prev = &h_rs;
 
 	h_rs.size = y;
-	h_rs.factor = (double)h / (double)y;
+	h_rs.factor = (float)h / (float)y;
 	h_rs.next = &w_rs;
 
 	if (w < 0) w = -w;
 	if (h < 0) h = -h;
 
-	float *frs = calloc(w * h * 4, sizeof(double));
+	float *frs = calloc(w * h * 4, sizeof(float));
 	scale_data(frs, img, &h_rs);
+	free(img);
 
 	tcolour *rs = calloc(w * h, sizeof(tcolour));
 	int i, j;
@@ -201,6 +206,6 @@ int main(int argc, char **argv) {
 	free(frs);
 
 	savebmp(argv[2], rs, w, h);
-	free(img);
+	free(rs);
 	return 0;
 }
