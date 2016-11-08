@@ -266,29 +266,34 @@ void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr) {
 	return;
 }
 
+typedef struct {
+	float r, g, b, a;
+} tclf;
+
+float set_range(float in, float low, float high) {
+	if (in < low) return low;
+	if (in > high) return high;
+	return in;
+}
+
 void resize_pixel(void *dst, void *src, scaler *sd) {
-	tcolour *d = (tcolour*)dst;
+	tclf *d = (tclf*)dst;
 	tcolour *s = (tcolour*)src;
 
 	// sd contains info about x whereas sd->prev contains info about y
 	float area = sd->value * sd->prev->value;
+	if (area <= 0.0001) return;
 
 	int s_idx = sd->prev->idx * sd->size + sd->idx;
 
-	int d_width = sd->size * sd->factor;
+	int d_width = (sd->size * sd->factor) + 0.5; // make sure it's rounded correctly
 	if (d_width < 0) d_width = -d_width;
 	int d_idx = sd->prev->pos * d_width + sd->pos;
 
-	u8 *d_pix = (u8*)(&d[d_idx]);
-	u8 *s_pix = (u8*)(&s[s_idx]);
-
-	int i;
-	for (i = 0; i < 4; i++) {
-		float f = (float)d_pix[i] + (float)s_pix[i] * area;
-		if (f > 255.0) f = 255.0;
-		if (f < 0.0) f = 0.0;
-		d_pix[i] = (u8)f;
-	}
+	d[d_idx].r = set_range(d[d_idx].r + (float)s[s_idx].r * area, 0.0, 255.0);
+	d[d_idx].g = set_range(d[d_idx].g + (float)s[s_idx].g * area, 0.0, 255.0);
+	d[d_idx].b = set_range(d[d_idx].b + (float)s[s_idx].b * area, 0.0, 255.0);
+	d[d_idx].a = set_range(d[d_idx].a + (float)s[s_idx].a * area, 0.0, 255.0);
 }
 
 void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h) {
@@ -323,7 +328,17 @@ void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h) {
 	h_rs.factor = y_sc;
 	h_rs.next = &w_rs;
 
-	scale_data(dst->img, src->img, &h_rs);
+	tclf *rs = calloc(dst->w * dst->h, sizeof(tclf));
+	scale_data(rs, src->img, &h_rs);
+
+	int i;
+	for (i = 0; i < dst->w * dst->h; i++) {
+		dst->img[i].r = (u8)rs[i].r;
+		dst->img[i].g = (u8)rs[i].g;
+		dst->img[i].b = (u8)rs[i].b;
+		dst->img[i].a = (u8)rs[i].a;
+	}
+	free(rs);
 }
 
 void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h) {

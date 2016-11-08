@@ -7,6 +7,10 @@ typedef struct {
 } tcolour;
 
 typedef struct {
+	float r, g, b, a;
+} tclf;
+
+typedef struct {
 	int file_sz;      // Size of file in bytes
 	short un1, un2;   // Unused variables (0)
 	int off;          // Byte offset of pixel data in file (54)
@@ -135,7 +139,7 @@ void savebmp(char *name, tcolour *img, int w, int h) {
 	fclose(f);
 	free(out);
 }
-
+/*
 void resize_pixel(void *dst, void *src, scaler *sd) {
 	float *d = (float*)dst;
 	tcolour *s = (tcolour*)src;
@@ -162,6 +166,33 @@ void resize_pixel(void *dst, void *src, scaler *sd) {
 		if (f < 0.0) f = 0.0;
 		d[d_idx*4 + i] = f;
 	}
+}
+*/
+
+float set_range(float in, float low, float high) {
+	if (in < low) return low;
+	if (in > high) return high;
+	return in;
+}
+
+void resize_pixel(void *dst, void *src, scaler *sd) {
+	tclf *d = (tclf*)dst;
+	tcolour *s = (tcolour*)src;
+
+	// sd contains info about x whereas sd->prev contains info about y
+	float area = sd->value * sd->prev->value;
+	if (area <= 0.0001) return;
+
+	int s_idx = sd->prev->idx * sd->size + sd->idx;
+
+	int d_width = (sd->size * sd->factor) + 0.5; // make sure it's rounded correctly
+	if (d_width < 0) d_width = -d_width;
+	int d_idx = sd->prev->pos * d_width + sd->pos;
+
+	d[d_idx].r = set_range(d[d_idx].r + (float)s[s_idx].r * area, 0.0, 255.0);
+	d[d_idx].g = set_range(d[d_idx].g + (float)s[s_idx].g * area, 0.0, 255.0);
+	d[d_idx].b = set_range(d[d_idx].b + (float)s[s_idx].b * area, 0.0, 255.0);
+	d[d_idx].a = set_range(d[d_idx].a + (float)s[s_idx].a * area, 0.0, 255.0);
 }
 
 int main(int argc, char **argv) {
@@ -193,18 +224,29 @@ int main(int argc, char **argv) {
 	if (w < 0) w = -w;
 	if (h < 0) h = -h;
 
-	float *frs = calloc(w * h * 4, sizeof(float));
+	//float *frs = calloc(w * h * 4, sizeof(float));
+	tclf *frs = calloc(w * h, sizeof(tclf));
 	scale_data(frs, img, &h_rs);
 	free(img);
 
-	tcolour *rs = calloc(w * h, sizeof(tcolour));
+/*
 	int i, j;
 	for (i = 0; i < w*h; i++) {
 		u8 *ptr = (u8*)&rs[i];
 		for (j = 0; j < 4; j++) ptr[j] = (u8)frs[i*4+j];
 	}
 	free(frs);
+*/
 
+	tcolour *rs = calloc(w * h, sizeof(tcolour));
+	int i;
+	for (i = 0; i < w*h; i++) {
+		rs[i].r = (u8)frs[i].r;
+		rs[i].g = (u8)frs[i].g;
+		rs[i].b = (u8)frs[i].b;
+		rs[i].a = (u8)frs[i].a;
+	}
+	free(frs);
 	savebmp(argv[2], rs, w, h);
 	free(rs);
 	return 0;
