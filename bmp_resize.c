@@ -175,24 +175,32 @@ float set_range(float in, float low, float high) {
 	return in;
 }
 
+int count = 0, old_sd_pos = -1;
+
 void resize_pixel(void *dst, void *src, scaler *sd) {
 	tclf *d = (tclf*)dst;
 	tcolour *s = (tcolour*)src;
 
 	// sd contains info about x whereas sd->prev contains info about y
 	float area = sd->value * sd->prev->value;
-	if (area <= 0.0001) return;
+	//if (area <= 0.000001) return;
 
 	int s_idx = sd->prev->idx * sd->size + sd->idx;
 
 	int d_width = (sd->size * sd->factor) + 0.5; // make sure it's rounded correctly
 	if (d_width < 0) d_width = -d_width;
+
 	int d_idx = sd->prev->pos * d_width + sd->pos;
+
+	if (sd->pos != old_sd_pos) printf("area: %.5f, d_idx: %d, d_width: %d, sd->pos: %d\n", area, d_idx, d_width, sd->pos);
 
 	d[d_idx].r = set_range(d[d_idx].r + (float)s[s_idx].r * area, 0.0, 255.0);
 	d[d_idx].g = set_range(d[d_idx].g + (float)s[s_idx].g * area, 0.0, 255.0);
 	d[d_idx].b = set_range(d[d_idx].b + (float)s[s_idx].b * area, 0.0, 255.0);
 	d[d_idx].a = set_range(d[d_idx].a + (float)s[s_idx].a * area, 0.0, 255.0);
+
+	old_sd_pos = sd->pos;
+	count++;
 }
 
 int main(int argc, char **argv) {

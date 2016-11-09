@@ -36,7 +36,7 @@ void scale_data(void *dst, void *src, scaler *sd) {
 			int p = (int)pos;
 			float block = 1.0 - (pos - (float)p);
 			float amount = span_left;
-			if (block < span_left) {
+			if (block + 0.000001 < span_left) { // Terrible floating-point hack
 				amount = block;
 				pos += amount;
 				span_left -= amount;
@@ -269,24 +269,32 @@ float set_range(float in, float low, float high) {
 	return in;
 }
 
+int old_sd_pos = -1;
+
 void resize_pixel(void *dst, void *src, scaler *sd) {
 	tclf *d = (tclf*)dst;
 	tcolour *s = (tcolour*)src;
 
 	// sd contains info about x whereas sd->prev contains info about y
-	float area = sd->value * sd->prev->value;
-	if (area <= 0.0001) return;
+	double area = sd->value * sd->prev->value;
+	//if (area <= 0.000001) return;
 
 	int s_idx = sd->prev->idx * sd->size + sd->idx;
 
 	int d_width = (sd->size * sd->factor) + 0.5; // make sure it's rounded correctly
 	if (d_width < 0) d_width = -d_width;
+	if (sd->pos >= d_width) return;
+
 	int d_idx = sd->prev->pos * d_width + sd->pos;
+
+	//if (sd->pos != old_sd_pos) printf("area: %.5f, d_idx: %d, d_width: %d, sd->pos: %d\n", area, d_idx, d_width, sd->pos);
 
 	d[d_idx].r = set_range(d[d_idx].r + (float)s[s_idx].r * area, 0.0, 255.0);
 	d[d_idx].g = set_range(d[d_idx].g + (float)s[s_idx].g * area, 0.0, 255.0);
 	d[d_idx].b = set_range(d[d_idx].b + (float)s[s_idx].b * area, 0.0, 255.0);
 	d[d_idx].a = set_range(d[d_idx].a + (float)s[s_idx].a * area, 0.0, 255.0);
+
+	old_sd_pos = sd->pos;
 }
 
 void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h) {
@@ -299,11 +307,11 @@ void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h) {
 		return;
 	}
 
-	float x_sc = (float)w / (float)src->w;
+	double x_sc = (double)w / (double)src->w;
 	if (w < 0) w = -w;
 	dst->w = w;
 
-	float y_sc = (float)h / (float)src->h;
+	double y_sc = (double)h / (double)src->h;
 	if (h < 0) h = -h;
 	dst->h = h;
 

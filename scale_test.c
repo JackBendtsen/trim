@@ -38,7 +38,7 @@ void scale_data(void *dst, void *src, scaler *sd) {
 			int p = (int)pos;
 			double block = 1.0 - (pos - (double)p);
 			double amount = span_left;
-			if (block < span_left) {
+			if (block + 0.000001 < span_left) {
 				amount = block;
 				pos += amount;
 				span_left -= amount;
