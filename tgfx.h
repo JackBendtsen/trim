@@ -45,8 +45,21 @@ typedef struct {
 	int n_points;
 } tpolygon;
 
+static const tcolour _trim_16cp[] = {
+	{  0,   0,   0, 255}, {  0,   0, 128, 255},
+	{  0, 128,   0, 255}, {  0, 128, 128, 255},
+	{128,   0,   0, 255}, {128,   0, 128, 255},
+	{128, 128,   0, 255}, {192, 192, 192, 255},
+	{128, 128, 128, 255}, {  0,   0, 255, 255},
+	{  0, 230,   0, 255}, {  0, 255, 255, 255},
+	{255,   0,   0, 255}, {255,   0, 255, 255},
+	{255, 255,   0, 255}, {255, 255, 255, 255}
+};
+
 tsprite *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode);
 void trim_closevideo(tsprite *s);
+
+int trim_openbmp(ttexture *tex, char *name);
 
 void trim_blendcolour(tcolour *dst, tcolour *src);
 

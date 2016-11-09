@@ -36,7 +36,7 @@ void scale_data(void *dst, void *src, scaler *sd) {
 			int p = (int)pos;
 			float block = 1.0 - (pos - (float)p);
 			float amount = span_left;
-			if (block + 0.000001 < span_left) { // Terrible floating-point hack
+			if (block /*+ 0.000001*/ < span_left) { // Terrible floating-point hack
 				amount = block;
 				pos += amount;
 				span_left -= amount;
@@ -55,15 +55,97 @@ void scale_data(void *dst, void *src, scaler *sd) {
 	}
 }
 
-void get_rgb(int c, int *r, int *g, int *b) {
-	if (r) *r = (c >> 16) & 0xff;
-	if (g) *g = (c >> 8) & 0xff;
-	if (b) *b = c & 0xff;
-}
+typedef struct {
+	int file_sz;      // Size of file in bytes
+	short un1, un2;   // Unused variables (0)
+	int off;          // Byte offset of pixel data in file (54)
+	int dib_sz;       // Size of the DIB header (40)
+	int x, y;         // Dimensions of the BMP
+	short ndp;        // Number of drawing planes (1)
+	short bpp;        // Bits per pixel
+	int comp;         // Compression used (0)
+	int data_sz;      // Size of pixel data including padding
+	int x_res, y_res; // Resolution of the image in pixels per metre (0)
+	int nc;           // Number of colours (0)
+	int nic;          // Number of important colours (0)
+} bmp_t;
+/*
+Note: this struct does not include the BMP signature as it is a 2-byte field by itself,
+      thus screwing up the entire struct's byte alignment
+*/
 
-int set_rgb(int r, int g, int b) {
-	if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) return 0;
-	return (r << 16) | (b << 8) | g;
+int trim_openbmp(ttexture *tex, char *name) {
+	if (!tex || !name) return -1;
+
+	FILE *f = fopen(name, "rb");
+	if (!f) {
+		printf("Could not open \"%s\"\n", name);
+		return -2;
+	}
+
+	fseek(f, 0, SEEK_END);
+	int sz = ftell(f);
+	rewind(f);
+	if (sz < sizeof(bmp_t)) {
+		printf("\"%s\" isn't big enough to be a BMP file (size: %d)\n", name, sz);
+		return -3;
+	}
+
+	u8 *buf = malloc(sz);
+	fread(buf, 1, sz, f);
+	fclose(f);
+
+	bmp_t hdr = {0};
+	memcpy(&hdr, buf+2, sizeof(bmp_t));
+	//print_bmp_t(&hdr);
+
+	int err = 0;
+	if (memcmp(buf, "BM", 2)) {
+		printf("\"%s\" is not a BMP file\n", name);
+		err = -4;
+	}
+	else if (hdr.x < 1 || hdr.y < 1) {
+		printf("\"%s\" has invalid dimensions (%dx%d)\n", name, hdr.x, hdr.y);
+		err = -5;
+	}
+	else if (hdr.bpp != 24 && hdr.bpp != 32) {
+		printf("\"%s\" is not a 24-bit or 32-bit BMP (ndp: %d)\n", name, hdr.ndp);
+		err = -6;
+	}
+	else if (hdr.comp) {
+		printf("BMP Compression is not supported\n");
+		err = -7;
+	}
+	if (err) {
+		free(buf);
+		return err;
+	}
+
+	int xr = hdr.x * (hdr.bpp / 8);
+	xr += (4 - (xr % 4)) % 4;
+	if (sz != hdr.off + xr * hdr.y) {
+		printf("The size of \"%s\" (%d) does not match its projected size (%d)\n"
+		       "(offset: %d, bpp: %d, row length: %d, x: %d, y: %d)\n",
+		       name, sz, hdr.off + xr * hdr.y, hdr.off, hdr.bpp, xr, hdr.x, hdr.y);
+		free(buf);
+		return -8;
+	}
+
+	if (tex->img) free(tex->img);
+	tex->img = calloc(hdr.x * hdr.y, sizeof(tcolour));
+
+	int i, j;
+	for (i = 0; i < hdr.y; i++) {
+		u8 *ptr = buf + (hdr.y-i-1) * xr + hdr.off;
+		for (j = 0; j < xr; j += hdr.bpp/8) {
+			tcolour p = {ptr[j+2], ptr[j+1], ptr[j], hdr.bpp == 32 ? ptr[j+3] : 0xff};
+			memcpy(tex->img + (i * hdr.x) + (j / (hdr.bpp/8)), &p, sizeof(tcolour));
+		}
+	}
+	tex->w = hdr.x;
+	tex->h = hdr.y;
+	free(buf);
+	return 0;
 }
 
 int trim_to256(tcolour *c) {
@@ -83,16 +165,45 @@ int trim_to256(tcolour *c) {
 	}
 	return ((lum * 0x18) / 256) + 0xe8;
 }
-/*
+
 int trim_to16(tcolour *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
 	int g = ((int)c->g * (int)c->a) / 0xff;
 	int b = ((int)c->b * (int)c->a) / 0xff;
 
-	int lum = (r+g+b) / 3;
-	
-	
-*/
+	int i, match[16];
+	for (i = 0; i < 16; i++) {
+		int rd = r - _trim_16cp[i].r;
+		int gd = g - _trim_16cp[i].g;
+		int bd = b - _trim_16cp[i].b;
+		if (rd < 0) rd = -rd;
+		if (gd < 0) gd = -gd;
+		if (bd < 0) bd = -bd;
+		match[i] = rd + gd + bd;
+	}
+
+	int low = match[0], idx = 0;
+	for (i = 1; i < 16; i++) {
+		if (match[i] < low) {
+			low = match[i];
+			idx = i;
+		}
+	}
+	return idx;
+}
+
+int trim_16to256(int x) {
+	if (x < 0 || x > 15) return 0;
+
+	int p[] = {
+		0x10, 0x12, 0x1c, 0x1e,
+		0x58, 0x5a, 0x64, 0xfa,
+		0xf4, 0x15, 0x2e, 0x33,
+		0xc4, 0xc9, 0xe2, 0xe7
+	};
+	return p[x];
+}
+
 void trim_createpixel(tpixel *p, tcolour *bg, tcolour *fg, char ch) {
 	if (!p) return;
 
@@ -181,8 +292,6 @@ void trim_blendcolour(tcolour *dst, tcolour *src) {
 	}
 }
 
-FILE *debug = NULL;
-
 void trim_applysprite(tsprite *dst, tsprite *src) {
 	if (!dst || !src) return;
 	if (src->x + src->w <= 0 || src->x >= dst->w) return;
@@ -204,14 +313,11 @@ void trim_applysprite(tsprite *dst, tsprite *src) {
 	int h = src->h - sy;
 	if (h > dst->h - dy) h = dst->h - dy;
 
-	if (!debug) debug = fopen("as_debug.txt", "w");
-	fprintf(debug, "dx: %d, dy: %d, sx: %d, sy: %d, w: %d, h: %d\n", dx, dy, sx, sy, w, h);
-
 	int i, j;
 	for (i = 0; i < h; i++) {
 		for (j = 0; j < w; j++) {
 			tpixel *dp = &dst->pix[(dy+i) * dst->w + dx+j];
-			tpixel *sp = &src->pix[(sy+i) * w + sx+j];
+			tpixel *sp = &src->pix[(sy+i) * src->w + sx+j];
 
 			trim_blendcolour(&dp->bg, &sp->bg);
 			trim_blendcolour(&dp->fg, &sp->fg);
@@ -269,32 +375,33 @@ float set_range(float in, float low, float high) {
 	return in;
 }
 
-int old_sd_pos = -1;
-
 void resize_pixel(void *dst, void *src, scaler *sd) {
 	tclf *d = (tclf*)dst;
 	tcolour *s = (tcolour*)src;
 
 	// sd contains info about x whereas sd->prev contains info about y
 	double area = sd->value * sd->prev->value;
-	//if (area <= 0.000001) return;
 
 	int s_idx = sd->prev->idx * sd->size + sd->idx;
 
-	int d_width = (sd->size * sd->factor) + 0.5; // make sure it's rounded correctly
+	// Add a half to make sure they're rounded correctly
+	float w_round = (sd->factor < 0.0 ? -1.0 : 1.0) * 0.5;
+	float h_round = (sd->prev->factor < 0.0 ? -1.0 : 1.0) * 0.5;
+	int d_width = (sd->size * sd->factor) + w_round;
+	int d_height = (sd->prev->size * sd->prev->factor) + h_round;
+
 	if (d_width < 0) d_width = -d_width;
+	if (d_height < 0) d_height = -d_height;
+
 	if (sd->pos >= d_width) return;
+	if (sd->prev->pos >= d_height) return;
 
 	int d_idx = sd->prev->pos * d_width + sd->pos;
-
-	//if (sd->pos != old_sd_pos) printf("area: %.5f, d_idx: %d, d_width: %d, sd->pos: %d\n", area, d_idx, d_width, sd->pos);
 
 	d[d_idx].r = set_range(d[d_idx].r + (float)s[s_idx].r * area, 0.0, 255.0);
 	d[d_idx].g = set_range(d[d_idx].g + (float)s[s_idx].g * area, 0.0, 255.0);
 	d[d_idx].b = set_range(d[d_idx].b + (float)s[s_idx].b * area, 0.0, 255.0);
 	d[d_idx].a = set_range(d[d_idx].a + (float)s[s_idx].a * area, 0.0, 255.0);
-
-	old_sd_pos = sd->pos;
 }
 
 void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h) {
@@ -385,16 +492,20 @@ void trim_drawsprite(tsprite *s) {
 			trim_blendcolour(&s->pix[p].bg, NULL);
 			trim_blendcolour(&s->pix[p].fg, NULL);
 
-			if (s->mode == TRIM_256) {
-				int bg = trim_to256(&s->pix[p].bg);
-				int fg = trim_to256(&s->pix[p].fg);
-				printf("\x1b[48;5;%dm", bg);
-				//fflush(stdout);
-				printf("\x1b[38;5;%dm", fg);
+			int bg = 0, fg = 0;
+			if (s->mode == TRIM_16) {
+				bg = trim_16to256(trim_to16(&s->pix[p].bg));
+				bg = trim_16to256(trim_to16(&s->pix[p].bg));
+				printf("\x1b[48;5;%dm\x1b[38;5;%dm", bg, fg);
+			}
+			else if (s->mode == TRIM_256) {
+				bg = trim_to256(&s->pix[p].bg);
+				fg = trim_to256(&s->pix[p].fg);
+				printf("\x1b[48;5;%dm\x1b[38;5;%dm", bg, fg);
 			}
 			else if (s->mode == TRIM_RGB) {
 				printf("\x1b[48;2;%d;%d;%dm", s->pix[p].bg.r, s->pix[p].bg.g, s->pix[p].bg.b);
-				fflush(stdout);
+				//fflush(stdout);
 				printf("\x1b[38;2;%d;%d;%dm", s->pix[p].fg.r, s->pix[p].fg.g, s->pix[p].fg.b);
 			}
 			//fflush(stdout);
