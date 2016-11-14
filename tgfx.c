@@ -365,38 +365,6 @@ void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr) {
 	return;
 }
 
-tsprite *trim_resizesprite(tsprite *s, int w, int h) {
-	if (!s || w < 1 || h < 1) return NULL;
-
-	tsprite *new_spr = trim_createsprite(w, h, 0, 0, s->mode);
-	trim_applysprite(new_spr, s);
-	trim_closesprite(s);
-	return new_spr;
-}
-/*
-	tpixel ep = {0};
-	trim_createpixel(&ep, NULL, NULL, ' ');
-
-	int i, j;
-	if (w > s->w) {
-		for (i = 0; i < h; i++) {
-			for (j = s->w; j < w; j++) {
-				memcpy(&s->pix[i*w + j], &ep, sizeof(tpixel));
-			}
-		}
-	}
-	if (h > s->h) {
-		for (i = s->h; i < h; i++) {
-			for (j = 0; j < w; j++) {
-				memcpy(&s->pix[i*w + j], &ep, sizeof(tpixel));
-			}
-		}
-	}
-	s->w = w;
-	s->h = h;
-}
-*/
-
 typedef struct {
 	float r, g, b, a;
 } tclf;
@@ -537,18 +505,43 @@ void trim_drawsprite(tsprite *s) {
 			}
 			else if (s->mode == TRIM_RGB) {
 				printf("\x1b[48;2;%d;%d;%dm", s->pix[p].bg.r, s->pix[p].bg.g, s->pix[p].bg.b);
-				//fflush(stdout);
 				printf("\x1b[38;2;%d;%d;%dm", s->pix[p].fg.r, s->pix[p].fg.g, s->pix[p].fg.b);
 			}
-			//fflush(stdout);
 
 			char c = s->pix[p].ch;
 			putchar((c > 0x1f && c < 0x7f) ? c : ' ');
-			fflush(stdout);
+			//fflush(stdout);
 		}
 		printf("\x1b[0m");
 		fflush(stdout);
 	}
+}
+
+void trim_resizesprite(tsprite *s, int w, int h) {
+	if (!s || w < 1 || h < 1) return;
+
+	s->pix = realloc(s->pix, w * h * sizeof(tpixel));
+
+	tpixel ep = {0};
+	trim_createpixel(&ep, NULL, NULL, ' ');
+	int i, j;
+	if (w > s->w) {
+		for (i = h-1; i >= 0; i--) {
+			if (i) memmove(s->pix + i*w, s->pix + i*s->w, s->w * sizeof(tpixel));
+			for (j = s->w; j < w; j++) {
+				memcpy(&s->pix[i*w + j], &ep, sizeof(tpixel));
+			}
+		}
+	}
+	if (h > s->h) {
+		for (i = s->h; i < h; i++) {
+			for (j = 0; j < w; j++) {
+				memcpy(&s->pix[i*w + j], &ep, sizeof(tpixel));
+			}
+		}
+	}
+	s->w = w;
+	s->h = h;
 }
 
 void trim_closesprite(tsprite *s) {
@@ -569,8 +562,17 @@ void resize_screen(int signo) {
 	int w = win.ws_col;
 	int h = win.ws_row;
 
-	trim_screen = trim_resizesprite(trim_screen, w, h);
-	trim_drawsprite(trim_screen);
+/*
+	if (!debug) debug = fopen("rs_debug.txt", "w");
+	fprintf(debug, "trim_screen before: %p\n", trim_screen);
+	fflush(debug);
+*/
+	trim_resizesprite(trim_screen, w, h);
+/*
+	fprintf(debug, "trim_screen after: %p\n\n", trim_screen);
+	fflush(debug);
+*/
+	//trim_drawsprite(trim_screen);
 }
 
 void trim_initvideo(int mode) {

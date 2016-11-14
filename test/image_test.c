@@ -8,7 +8,7 @@ int main() {
 	ttexture tex = {0};
 	if (trim_openbmp(&tex, "image_test.bmp") < 0) return 1;
 
-	int x = 0, y = 0, w = 0, h = 0, mode = 0, key = 0;
+	int x = 0, y = 0, w = 0, h = 0, mode = 0, key = 0, fc = 0;
 	while (1) {
 		if (key == 0x1b) break;
 		if (key == ' ') mode = !mode;
@@ -48,12 +48,13 @@ int main() {
 		trim_rendertexture(trim_screen, &tex, x, y, w+1, h+1);
 
 		char msg[48];
-		sprintf(msg, "x: %d, y: %d, w: %d, h: %d, W: %d, H: %d", x, y, w+1, h+1, trim_screen->w, trim_screen->h);
-		trim_printsprite(trim_screen, msg, 0, 0, 0);
-		trim_drawsprite(trim_screen);
+		sprintf(msg, "x: %d, y: %d, w: %d, h: %d, W: %d, H: %d, fc: %d", x, y, w+1, h+1, trim_screen->w, trim_screen->h, fc);
+		trim_printsprite(trim_screen, msg, 0, 0, 1);
 		trim_drawsprite(trim_screen);
 
 		key = trim_getkey();
+		fc++;
+		//if (key < 0) break;
 	}
 
 	free(tex.img);

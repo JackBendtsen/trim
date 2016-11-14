@@ -75,7 +75,7 @@ tsprite *trim_createsprite(int w, int h, int x, int y, int mode);
 void trim_fillsprite(tsprite *spr, tpixel *p);
 void trim_applysprite(tsprite *dst, tsprite *src);
 void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr);
-tsprite *trim_resizesprite(tsprite *s, int w, int h);
+void trim_resizesprite(tsprite *s, int w, int h);
 
 void trim_renderpolygon(ttexture *tex, tpolygon *poly);
 void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h);
