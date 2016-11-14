@@ -79,7 +79,7 @@ void trim_initkb(int kb_mode) {
 
 void trim_readinput(int *key, int wait) {
 	if (_trim_cur_kbst && _trim_cur_kbsize) {
-		_trim_old_kbst = realloc(_trim_old_kbst, _trim_cur_kbsize);
+		_trim_old_kbst = realloc(_trim_old_kbst, _trim_cur_kbsize * sizeof(tkey));
 		_trim_old_kbsize = _trim_cur_kbsize;
 		memcpy(_trim_old_kbst, _trim_cur_kbst, _trim_old_kbsize);
 	}
@@ -90,7 +90,7 @@ void trim_readinput(int *key, int wait) {
 
 		char buf[16] = {0};
 		if (wait) select(1, &_trim_fdset, NULL, NULL, NULL);
-		if (read(0, &buf[0], 16) < 0) return;
+		read(0, &buf[0], 15);
 
 		int value = 0, sz = strlen(buf) < 4 ? strlen(buf) : 4;
 		for (i = 0; i < sz; i++) value |= buf[sz-i-1] << (i*8);
@@ -144,9 +144,10 @@ void trim_pollkb(void) {
 }
 
 int trim_getkey(void) {
-	int key;
+	int key = 0;
 	trim_readinput(&key, 1);
-	return _trim_cur_kbst[key].code;
+	if (_trim_cur_kbst && key < _trim_cur_kbsize) return _trim_cur_kbst[key].code;
+	return key;
 }
 
 int trim_keydown(int key) {

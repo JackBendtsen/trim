@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <signal.h>
 
 #define TRIM_RGB 0
 #define TRIM_256 1
@@ -56,8 +58,12 @@ static const tcolour _trim_16cp[] = {
 	{255, 255,   0, 255}, {255, 255, 255, 255}
 };
 
-tsprite *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode);
-void trim_closevideo(tsprite *s);
+tsprite *trim_screen;
+int trim_old_w;
+int trim_old_h;
+
+void trim_initvideo(int mode);
+void trim_closevideo();
 
 int trim_openbmp(ttexture *tex, char *name);
 
@@ -69,6 +75,7 @@ tsprite *trim_createsprite(int w, int h, int x, int y, int mode);
 void trim_fillsprite(tsprite *spr, tpixel *p);
 void trim_applysprite(tsprite *dst, tsprite *src);
 void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr);
+tsprite *trim_resizesprite(tsprite *s, int w, int h);
 
 void trim_renderpolygon(ttexture *tex, tpolygon *poly);
 void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h);

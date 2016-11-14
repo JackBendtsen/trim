@@ -36,7 +36,7 @@ void scale_data(void *dst, void *src, scaler *sd) {
 			int p = (int)pos;
 			float block = 1.0 - (pos - (float)p);
 			float amount = span_left;
-			if (block /*+ 0.000001*/ < span_left) { // Terrible floating-point hack
+			if (block < span_left) {
 				amount = block;
 				pos += amount;
 				span_left -= amount;
@@ -365,6 +365,38 @@ void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr) {
 	return;
 }
 
+tsprite *trim_resizesprite(tsprite *s, int w, int h) {
+	if (!s || w < 1 || h < 1) return NULL;
+
+	tsprite *new_spr = trim_createsprite(w, h, 0, 0, s->mode);
+	trim_applysprite(new_spr, s);
+	trim_closesprite(s);
+	return new_spr;
+}
+/*
+	tpixel ep = {0};
+	trim_createpixel(&ep, NULL, NULL, ' ');
+
+	int i, j;
+	if (w > s->w) {
+		for (i = 0; i < h; i++) {
+			for (j = s->w; j < w; j++) {
+				memcpy(&s->pix[i*w + j], &ep, sizeof(tpixel));
+			}
+		}
+	}
+	if (h > s->h) {
+		for (i = s->h; i < h; i++) {
+			for (j = 0; j < w; j++) {
+				memcpy(&s->pix[i*w + j], &ep, sizeof(tpixel));
+			}
+		}
+	}
+	s->w = w;
+	s->h = h;
+}
+*/
+
 typedef struct {
 	float r, g, b, a;
 } tclf;
@@ -523,27 +555,46 @@ void trim_closesprite(tsprite *s) {
 	if (!s) return;
 	if (s->pix) free(s->pix);
 	memset(s, 0, sizeof(tsprite));
+	free(s);
 }
 
-tsprite *trim_initvideo(int win_w, int win_h, int sc_w, int sc_h, int mode) {
-	int x = (win_w - sc_w) / 2;
-	int y = (win_h - sc_h) / 2;
-	if (x < 0) x = 0;
-	if (y < 0) y = 0;
+void resize_screen(int signo) {
+	if (signo != SIGWINCH) return;
 
+	trim_old_w = trim_screen->w;
+	trim_old_h = trim_screen->h;
+
+	struct winsize win;
+	ioctl(0, TIOCGWINSZ, &win);
+	int w = win.ws_col;
+	int h = win.ws_row;
+
+	trim_screen = trim_resizesprite(trim_screen, w, h);
+	trim_drawsprite(trim_screen);
+}
+
+void trim_initvideo(int mode) {
 	printf("\x1b[?25l");
-	system("clear");
-	return trim_createsprite(sc_w, sc_h, x, y, mode);
+	printf("\x1b[?7l");
+
+	signal(SIGWINCH, resize_screen);
+
+	struct winsize win;
+	ioctl(0, TIOCGWINSZ, &win);
+	trim_old_w = win.ws_col;
+	trim_old_h = win.ws_row;
+
+	trim_screen = trim_createsprite(trim_old_w, trim_old_h, 0, 0, mode);
 }
 
-void trim_closevideo(tsprite *s) {
+void trim_closevideo() {
 	printf("\x1b[0m");
 	int i, j;
-	for (i = 0; i < s->h; i++) {
-		printf("\x1b[%d;%dH", s->y+1 + i, s->x+1);
-		for (j = 0; j < s->w; j++) putchar(' ');
+	for (i = 0; i < trim_screen->h; i++) {
+		printf("\x1b[%d;1H", i+1);
+		for (j = 0; j < trim_screen->w; j++) putchar(' ');
 	}
+	printf("\x1b[?7h");
 	printf("\x1b[?25h\n");
-	trim_closesprite(s);
-	free(s);
+	trim_closesprite(trim_screen);
 }
