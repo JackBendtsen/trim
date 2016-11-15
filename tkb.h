@@ -24,7 +24,8 @@
 #define TRIM_RAWKB 1
 #define TRIM_DEFKB 0
 
-int _trim_kb_mode;
+int trim_kb_mode;
+
 int _trim_evfd;
 fd_set _trim_fdset;
 
@@ -33,10 +34,10 @@ typedef struct {
 	int state;
 } tkey;
 
-tkey *_trim_old_kbst;
-tkey *_trim_cur_kbst;
-int _trim_old_kbsize;
-int _trim_cur_kbsize;
+tkey *trim_old_kbst;
+tkey *trim_cur_kbst;
+int trim_old_kbsize;
+int trim_cur_kbsize;
 
 struct termios _tty_old;
 

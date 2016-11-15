@@ -30,20 +30,6 @@ int main() {
 			else w++;
 		}
 
-/*
-		if (x < 0) x = 0;
-		if (x >= WIDTH) x = WIDTH-1;
-
-		if (y < 0) y = 0;
-		if (y >= HEIGHT) y = HEIGHT-1;
-
-		if (w < 0) w = 0;
-		if (w >= WIDTH) w = WIDTH-1;
-
-		if (h < 0) h = 0;
-		if (h >= HEIGHT) h = HEIGHT-1;
-*/
-
 		trim_fillsprite(trim_screen, NULL);
 		trim_rendertexture(trim_screen, &tex, x, y, w+1, h+1);
 

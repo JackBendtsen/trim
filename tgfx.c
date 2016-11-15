@@ -481,9 +481,31 @@ void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h)
 	free(new_spr.pix);
 }
 
+#ifdef _WIN32_
+
 void trim_drawsprite(tsprite *s) {
 	if (!s) return;
-	int r, g, b;
+	int i, j, p = 0, bg, fg;
+	for (i = 0; i < s->h; i++) {
+		for (j = 0; j < s->w; j++, p++) {
+			trim_blendcolour(&s->pix[p].bg, NULL);
+			trim_blendcolour(&s->pix[p].fg, NULL);
+
+			bg = trim_to16(&s->pix[p].bg);
+			fg = trim_to16(&s->pix[p].fg);
+			int attr = (bg << 4) | fg;
+			
+			COORD pos = {j, i};
+			WriteConsoleOutputAttribute(trim_wch, &attr, 1, pos, NULL);
+			WriteConsoleOutputCharacter(trim_wch, &s->pix[p].ch, 1, pos, NULL);
+		}
+	}
+}
+
+#else
+
+void trim_drawsprite(tsprite *s) {
+	if (!s) return;
 	int i, j, p = 0;
 	for (i = 0; i < s->h; i++) {
 		printf("\x1b[%d;%dH", s->y+i+1, s->x+1);
@@ -495,7 +517,7 @@ void trim_drawsprite(tsprite *s) {
 			int bg = 0, fg = 0;
 			if (s->mode == TRIM_16) {
 				bg = trim_16to256(trim_to16(&s->pix[p].bg));
-				bg = trim_16to256(trim_to16(&s->pix[p].bg));
+				fg = trim_16to256(trim_to16(&s->pix[p].fg));
 				printf("\x1b[48;5;%dm\x1b[38;5;%dm", bg, fg);
 			}
 			else if (s->mode == TRIM_256) {
@@ -516,6 +538,8 @@ void trim_drawsprite(tsprite *s) {
 		fflush(stdout);
 	}
 }
+
+#endif
 
 void trim_resizesprite(tsprite *s, int w, int h) {
 	if (!s || w < 1 || h < 1) return;
@@ -551,6 +575,39 @@ void trim_closesprite(tsprite *s) {
 	free(s);
 }
 
+#ifdef _WIN32_
+
+void trim_getconsolesize(int *w, int *h) {
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(trim_wch, &csbi);
+
+    if (w) *w = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    if (h) *h = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+}
+
+void trim_initvideo(int mode) {
+	//trim_win32conhnd = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+	trim_wch = GetStdHandle(STD_OUTPUT_HANDLE);
+
+	COORD pos = {0, 0};
+	ReadConsoleOutputAttribute(trim_wch, &trim_old_colour, 1, pos, NULL);
+
+	trim_getconsolesize(&trim_old_w, &trim_old_h);
+	trim_screen = trim_createsprite(trim_old_w, trim_old_h, 0, 0, mode);
+}
+
+void trim_closevideo(void) {
+	int size = trim_screen->w * trim_screen->h;
+	COORD pos = {0, 0};
+	FillConsoleOutputAttribute(trim_wch, trim_old_colour, size, pos, NULL);
+	FillConsoleOutputCharacter(trim_wch, ' ', size, pos, NULL);
+
+	CloseHandle(trim_wch);
+	trim_closesprite(trim_screen);
+}
+
+#else
+
 void resize_screen(int signo) {
 	if (signo != SIGWINCH) return;
 
@@ -559,20 +616,8 @@ void resize_screen(int signo) {
 
 	struct winsize win;
 	ioctl(0, TIOCGWINSZ, &win);
-	int w = win.ws_col;
-	int h = win.ws_row;
 
-/*
-	if (!debug) debug = fopen("rs_debug.txt", "w");
-	fprintf(debug, "trim_screen before: %p\n", trim_screen);
-	fflush(debug);
-*/
-	trim_resizesprite(trim_screen, w, h);
-/*
-	fprintf(debug, "trim_screen after: %p\n\n", trim_screen);
-	fflush(debug);
-*/
-	//trim_drawsprite(trim_screen);
+	trim_resizesprite(trim_screen, win.ws_col, win.ws_row);
 }
 
 void trim_initvideo(int mode) {
@@ -589,7 +634,7 @@ void trim_initvideo(int mode) {
 	trim_screen = trim_createsprite(trim_old_w, trim_old_h, 0, 0, mode);
 }
 
-void trim_closevideo() {
+void trim_closevideo(void) {
 	printf("\x1b[0m");
 	int i, j;
 	for (i = 0; i < trim_screen->h; i++) {
@@ -600,3 +645,5 @@ void trim_closevideo() {
 	printf("\x1b[?25h\n");
 	trim_closesprite(trim_screen);
 }
+
+#endif

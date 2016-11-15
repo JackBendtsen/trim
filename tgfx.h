@@ -4,8 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <signal.h>
+
+#ifdef _WIN32_
+ #include <windows.h>
+#else
+ #include <sys/ioctl.h>
+ #include <signal.h>
+#endif
 
 #define TRIM_RGB 0
 #define TRIM_256 1
@@ -77,7 +82,7 @@ void trim_applysprite(tsprite *dst, tsprite *src);
 void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr);
 void trim_resizesprite(tsprite *s, int w, int h);
 
-void trim_renderpolygon(ttexture *tex, tpolygon *poly);
+//void trim_renderpolygon(ttexture *tex, tpolygon *poly);
 void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h);
 void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h);
 
