@@ -1,5 +1,29 @@
 #include "tkb.h"
 
+void trim_update_old_input(void) {
+	if (!trim_cur_kbst || !trim_cur_kbsize) return;
+
+	trim_old_kbst = realloc(trim_old_kbst, trim_cur_kbsize * sizeof(tkey));
+	trim_old_kbsize = trim_cur_kbsize;
+	memcpy(trim_old_kbst, trim_cur_kbst, trim_old_kbsize);
+}
+
+#ifdef _WIN32_
+
+void trim_initkb(int kb_mode) {
+	if (kb_mode < TRIM_DEFKB || kb_mode > TRIM_RAWKB) return;
+	_trim_kb_mode = kb_mode;
+
+	trim_old_kbst = NULL;
+	trim_cur_kbst = NULL;
+	trim_old_kbsize = 0;
+	trim_cur_kbsize = 0;
+
+	
+}
+
+#else
+
 /*
 In a Unix terminal application, there seem to be two main ways to read input in a manner suitable for non-printing.
   The simple way is to read raw data from stdin after configuring the TTY to turn off unwanted features.
@@ -12,10 +36,10 @@ It does, however, allow for accurately deciding if a key is held or not by the e
 void trim_initkb(int kb_mode) {
 	_trim_kb_mode = TRIM_DEFKB;
 	_trim_evfd = -1;
-	_trim_old_kbst = NULL;
-	_trim_cur_kbst = NULL;
-	_trim_old_kbsize = 0;
-	_trim_cur_kbsize = 0;
+	trim_old_kbst = NULL;
+	trim_cur_kbst = NULL;
+	trim_old_kbsize = 0;
+	trim_cur_kbsize = 0;
 
 	char path[32];
 	unsigned char bits[32];
@@ -67,26 +91,22 @@ void trim_initkb(int kb_mode) {
 			_trim_kb_mode = TRIM_RAWKB;
 			FD_ZERO(&_trim_fdset);
 			FD_SET(_trim_evfd, &_trim_fdset);
-			return /*TRIM_RAWKB*/;
+			return;
 		}
 		close(_trim_evfd);
 	}
 #endif
 
 	// If one is not found, the default method of reading input from stdin will be used
-	//return TRIM_DEFKB;
 }
 
 void trim_readinput(int *key, int wait) {
-	if (_trim_cur_kbst && _trim_cur_kbsize) {
-		_trim_old_kbst = realloc(_trim_old_kbst, _trim_cur_kbsize * sizeof(tkey));
-		_trim_old_kbsize = _trim_cur_kbsize;
-		memcpy(_trim_old_kbst, _trim_cur_kbst, _trim_old_kbsize);
-	}
+	trim_update_old_input();
+
 	if (_trim_kb_mode == TRIM_DEFKB) {
 		int i;
-		for (i = 0; i < _trim_old_kbsize; i++) _trim_old_kbst[i].state = 0;
-		for (i = 0; i < _trim_cur_kbsize; i++) _trim_cur_kbst[i].state = 0;
+		for (i = 0; i < trim_old_kbsize; i++) trim_old_kbst[i].state = 0;
+		for (i = 0; i < trim_cur_kbsize; i++) trim_cur_kbst[i].state = 0;
 
 		char buf[16] = {0};
 		if (wait) select(1, &_trim_fdset, NULL, NULL, NULL);
@@ -95,16 +115,16 @@ void trim_readinput(int *key, int wait) {
 		int value = 0, sz = strlen(buf) < 4 ? strlen(buf) : 4;
 		for (i = 0; i < sz; i++) value |= buf[sz-i-1] << (i*8);
 
-		for (i = 0; i < _trim_cur_kbsize; i++) {
-			if (_trim_cur_kbst[i].code == value) {
-				_trim_cur_kbst[i].state = 1;
+		for (i = 0; i < trim_cur_kbsize; i++) {
+			if (trim_cur_kbst[i].code == value) {
+				trim_cur_kbst[i].state = 1;
 				break;
 			}
 		}
-		if (i == _trim_cur_kbsize) {
-			_trim_cur_kbst = realloc(_trim_cur_kbst, ++_trim_cur_kbsize * sizeof(tkey));
-			_trim_cur_kbst[i].code = value;
-			_trim_cur_kbst[i].state = 1;
+		if (i == trim_cur_kbsize) {
+			trim_cur_kbst = realloc(trim_cur_kbst, ++trim_cur_kbsize * sizeof(tkey));
+			trim_cur_kbst[i].code = value;
+			trim_cur_kbst[i].state = 1;
 		}
 		if (key) *key = i;
 	}
@@ -122,22 +142,37 @@ void trim_readinput(int *key, int wait) {
 		int i, j, n_events = r / sizeof(struct input_event);
 		for (i = 0; i < n_events; i++) {
 			if (ev[i].type > 1) continue;
-			for (j = 0; j < _trim_cur_kbsize; j++) {
-				if (_trim_cur_kbst[j].code == ev[i].code) {
-					_trim_cur_kbst[j].state = ev[i].value;
+			for (j = 0; j < trim_cur_kbsize; j++) {
+				if (trim_cur_kbst[j].code == ev[i].code) {
+					trim_cur_kbst[j].state = ev[i].value;
 					break;
 				}
 			}
-			if (j == _trim_cur_kbsize) {
-				_trim_cur_kbst = realloc(_trim_cur_kbst, ++_trim_cur_kbsize * sizeof(tkey));
-				_trim_cur_kbst[j].code = ev[i].code;
-				_trim_cur_kbst[j].state = ev[i].value;
+			if (j == trim_cur_kbsize) {
+				trim_cur_kbst = realloc(trim_cur_kbst, ++trim_cur_kbsize * sizeof(tkey));
+				trim_cur_kbst[j].code = ev[i].code;
+				trim_cur_kbst[j].state = ev[i].value;
 			}
 		}
 		if (key) *key = j;
 #endif
 	}
 }
+
+// TODO: Flush evdev fd
+void trim_closekb(void) {
+	if (trim_old_kbst) free(trim_old_kbst);
+	if (trim_cur_kbst) free(trim_cur_kbst);
+
+	int flags = fcntl(0, F_GETFL);
+	flags &= ~O_NONBLOCK;
+	fcntl(0, F_SETFL, flags);
+	tcsetattr(0, TCSANOW, &_tty_old);
+
+	if (_trim_evfd > 0) close(_trim_evfd);
+}
+
+#endif /* ifdef _WIN32_ */
 
 void trim_pollkb(void) {
 	trim_readinput(NULL, 0);
@@ -146,15 +181,15 @@ void trim_pollkb(void) {
 int trim_getkey(void) {
 	int key = 0;
 	trim_readinput(&key, 1);
-	if (_trim_cur_kbst && key < _trim_cur_kbsize) return _trim_cur_kbst[key].code;
+	if (trim_cur_kbst && key < trim_cur_kbsize) return trim_cur_kbst[key].code;
 	return key;
 }
 
 int trim_keydown(int key) {
 	int i;
-	for (i = 0; i < _trim_cur_kbsize; i++) {
-		if (_trim_cur_kbst[i].code == key && (i >= _trim_old_kbsize ||
-		    (_trim_old_kbst[i].state == 0 && _trim_cur_kbst[i].state == 1))) {
+	for (i = 0; i < trim_cur_kbsize; i++) {
+		if (trim_cur_kbst[i].code == key && (i >= trim_old_kbsize ||
+		    (trim_old_kbst[i].state == 0 && trim_cur_kbst[i].state == 1))) {
 			return 1;
 		}
 	}
@@ -163,8 +198,8 @@ int trim_keydown(int key) {
 
 int trim_keyheld(int key) {
 	int i;
-	for (i = 0; i < _trim_cur_kbsize; i++) {
-		if (_trim_cur_kbst[i].code == key && _trim_cur_kbst[i].state == 1) {
+	for (i = 0; i < trim_cur_kbsize; i++) {
+		if (trim_cur_kbst[i].code == key && trim_cur_kbst[i].state == 1) {
 			return 1;
 		}
 	}
@@ -173,25 +208,12 @@ int trim_keyheld(int key) {
 
 int trim_keyup(int key) {
 	int i;
-	for (i = 0; i < _trim_old_kbsize; i++) {
-		if (_trim_cur_kbst[i].code == key &&
-		    _trim_old_kbst[i].state == 1 &&
-		    _trim_cur_kbst[i].state == 0) {
+	for (i = 0; i < trim_old_kbsize; i++) {
+		if (trim_cur_kbst[i].code == key &&
+		    trim_old_kbst[i].state == 1 &&
+		    trim_cur_kbst[i].state == 0) {
 			return 1;
 		}
 	}
 	return 0;
-}
-
-// TODO: Flush evdev fd
-void trim_closekb(void) {
-	if (_trim_old_kbst) free(_trim_old_kbst);
-	if (_trim_cur_kbst) free(_trim_cur_kbst);
-
-	int flags = fcntl(0, F_GETFL);
-	flags &= ~O_NONBLOCK;
-	fcntl(0, F_SETFL, flags);
-	tcsetattr(0, TCSANOW, &_tty_old);
-
-	if (_trim_evfd > 0) close(_trim_evfd);
 }
