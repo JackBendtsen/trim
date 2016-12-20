@@ -12,17 +12,20 @@ void trim_update_old_input(void) {
 
 void trim_initkb(int kb_mode) {
 	if (kb_mode < TRIM_DEFKB || kb_mode > TRIM_RAWKB) return;
-	_trim_kb_mode = kb_mode;
+	trim_kb_mode = kb_mode;
 
 	trim_old_kbst = NULL;
 	trim_cur_kbst = NULL;
 	trim_old_kbsize = 0;
 	trim_cur_kbsize = 0;
 
-	
+	if (kb_mode == TRIM_DEFKB) {
+		int kc[] = {
+			
+	}
 }
 
-#else
+#else /* ifdef _WIN32_ */
 
 /*
 In a Unix terminal application, there seem to be two main ways to read input in a manner suitable for non-printing.
@@ -34,7 +37,9 @@ This approach should work on all Unix-based systems, however.
 It does, however, allow for accurately deciding if a key is held or not by the event driven nature of the interface.
 */
 void trim_initkb(int kb_mode) {
-	_trim_kb_mode = TRIM_DEFKB;
+	if (kb_mode < TRIM_DEFKB || kb_mode > TRIM_RAWKB) return;
+	trim_kb_mode = kb_mode;
+	
 	_trim_evfd = -1;
 	trim_old_kbst = NULL;
 	trim_cur_kbst = NULL;
@@ -103,7 +108,7 @@ void trim_initkb(int kb_mode) {
 void trim_readinput(int *key, int wait) {
 	trim_update_old_input();
 
-	if (_trim_kb_mode == TRIM_DEFKB) {
+	if (trim_kb_mode == TRIM_DEFKB) {
 		int i;
 		for (i = 0; i < trim_old_kbsize; i++) trim_old_kbst[i].state = 0;
 		for (i = 0; i < trim_cur_kbsize; i++) trim_cur_kbst[i].state = 0;
@@ -172,7 +177,7 @@ void trim_closekb(void) {
 	if (_trim_evfd > 0) close(_trim_evfd);
 }
 
-#endif /* ifdef _WIN32_ */
+#endif /* ifndef _WIN32_ */
 
 void trim_pollkb(void) {
 	trim_readinput(NULL, 0);
