@@ -1,4 +1,4 @@
-#include "tkb.h"
+#include "trim.h"
 
 void trim_update_old_input(void) {
 	if (!trim_cur_kbst || !trim_cur_kbsize) return;
@@ -7,25 +7,6 @@ void trim_update_old_input(void) {
 	trim_old_kbsize = trim_cur_kbsize;
 	memcpy(trim_old_kbst, trim_cur_kbst, trim_old_kbsize);
 }
-
-#ifdef _WIN32_
-
-void trim_initkb(int kb_mode) {
-	if (kb_mode < TRIM_DEFKB || kb_mode > TRIM_RAWKB) return;
-	trim_kb_mode = kb_mode;
-
-	trim_old_kbst = NULL;
-	trim_cur_kbst = NULL;
-	trim_old_kbsize = 0;
-	trim_cur_kbsize = 0;
-
-	if (kb_mode == TRIM_DEFKB) {
-		int kc[] = {
-			
-	}
-}
-
-#else /* ifdef _WIN32_ */
 
 /*
 In a Unix terminal application, there seem to be two main ways to read input in a manner suitable for non-printing.
@@ -36,22 +17,37 @@ This approach should work on all Unix-based systems, however.
   The second approach is by reading data from the 'evdev' interface, which is currently only supported by Linux and the latest FreeBSD builds.
 It does, however, allow for accurately deciding if a key is held or not by the event driven nature of the interface.
 */
+
 void trim_initkb(int kb_mode) {
 	if (kb_mode < TRIM_DEFKB || kb_mode > TRIM_RAWKB) return;
 	trim_kb_mode = kb_mode;
-	
-	_trim_evfd = -1;
+
 	trim_old_kbst = NULL;
 	trim_cur_kbst = NULL;
 	trim_old_kbsize = 0;
 	trim_cur_kbsize = 0;
+
+#ifdef _WIN32_
+	int kc[] = {
+		0xc0, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0xbd, 0xbb, 0x08,
+		0x09, 0x51, 0x57, 0x45, 0x52, 0x54, 0x59, 0x55, 0x49, 0x4f, 0x50, 0xdb, 0xdd, 0xdc,
+		0x14, 0x41, 0x53, 0x44, 0x46, 0x47, 0x48, 0x4a, 0x4b, 0x4c, 0xba, 0xde, 0x0d,
+		0xa0, 0x5a, 0x58, 0x43, 0x56, 0x42, 0x4e, 0x4d, 0xbc, 0xbe, 0xbf, 0xa1,
+		0xa2, 0x5b, 0xa4, 0x20, 0xa5, 0x5c, 0x5d, 0xa3,
+		0x1b, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b,
+		0x2c, 0x91, 0x13, 0x2d, 0x24, 0x21, 0x2e, 0x23, 0x22, 0x26, 0x25, 0x28, 0x27,
+		0x90, 0x6f, 0x6a, 0x6d, 0x67, 0x68, 0x69, 0x6b, 0x64, 0x65, 0x66, 0x61, 0x62, 0x63, 0x0d, 0x60, 0x6e
+	};
+	memcpy((int*)trim_keycode, &kc[0], sizeof(kc));
+#else
+	_trim_evfd = -1;
 
 	char path[32];
 	unsigned char bits[32];
 	int idx = -1, i;
 	struct stat st;
 
-	// stdin configuration code taken from gcat.co.uk
+	// stdin & TTY configuration code taken from gcat.co.uk
 	struct termios tty;
 
 	/* make stdin non-blocking */
@@ -69,9 +65,11 @@ void trim_initkb(int kb_mode) {
 	FD_ZERO(&_trim_fdset);
 	FD_SET(0, &_trim_fdset);
 
-	if (kb_mode == TRIM_DEFKB) return;
+	if (kb_mode == TRIM_DEFKB) {
+		int kc[] = {
+			
+		return;
 
-#ifdef __linux__
 	// Attempt opening an input event device
 	while (1) {
 		idx++;
@@ -100,9 +98,10 @@ void trim_initkb(int kb_mode) {
 		}
 		close(_trim_evfd);
 	}
-#endif
 
-	// If one is not found, the default method of reading input from stdin will be used
+	int kc[] = {
+
+#endif /* #ifndef _WIN32_ */
 }
 
 void trim_readinput(int *key, int wait) {
