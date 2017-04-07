@@ -4,6 +4,8 @@
 
 #ifdef _WIN32_
   #include <windows.h>
+  HANDLE TRIM_wch;
+  HANDLE TRIM_winput;
 #else
   #include <unistd.h>
   #include <termios.h>
@@ -16,15 +18,22 @@
     #include <linux/kd.h>
     #include <linux/input.h>
   #endif
-  struct termios _trim_tty_old;
-  int _trim_evfd;
-  fd_set _trim_fdset;
+  struct termios _TRIM_tty_old;
+  int TRIM_kbfd;
+  fd_set TRIM_fdset;
 #endif
 
+// Colour modes. 0 = full colour mode, 1 = 256 colours, 2 = 16 colours
 #define TGFX_RGB 0
 #define TGFX_256 1
 #define TGFX_16  2
 
+// Character blending modes. 0 = all chars opaque, 1 = all chars but space are opaque, 2 = all chars transparent
+#define TGFX_CH_OPQ 0
+#define TGFX_CH_DEF 1
+#define TGFX_CH_TRN 2
+
+// Custom index for every US standard keyboard key
 #define TKEY_GRAVE    0
 #define TKEY_1        1
 #define TKEY_2        2
@@ -101,7 +110,7 @@
 #define TKEY_F11     72
 #define TKEY_F12     73
 #define TKEY_PRINT   74
-#define TKEY_SCLOCK  75
+#define TKEY_SCROLL  75
 #define TKEY_PAUSE   76
 #define TKEY_INSERT  77
 #define TKEY_HOME    78
@@ -135,14 +144,13 @@
 #define TRIM_NKEYS  104
 
 /*
-#define TKEY_UP    0x1b5b41
-#define TKEY_DOWN  0x1b5b42
-#define TKEY_RIGHT 0x1b5b43
-#define TKEY_LEFT  0x1b5b44
+   Keyboard input modes.
+   0 = Default keyboard mode, which allows key repeating and other such features, however key release is only supported on Windows.
+   1 = Raw keyboard mode, where the only types of input are key press and key release. Mac OS X and some other Unix systems are not supported.
+   In short, Default mode is good for applications, and Raw mode is good for games.
 */
-
-#define TRIM_RAWKB 1
 #define TRIM_DEFKB 0
+#define TRIM_RAWKB 1
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -150,29 +158,30 @@ typedef unsigned int u32;
 typedef struct {
 	int idx;
 	int state;
-} tkey;
+} TRIM_Key;
 
 typedef struct {
 	u8 r, g, b, a;
-} tcolour;
+} TRIM_Color;
 
 typedef struct {
-	tcolour bg;
-	tcolour fg;
-	char ch;
-} tpixel;
+	TRIM_Color bg;
+	TRIM_Color fg;
+} TRIM_Pixel;
 
 typedef struct {
-	tpixel *pix;
+	TRIM_Pixel *pix;
+	char *ch;
 	int w, h;
 	int x, y;
-	int mode;
-} tsprite;
+	int colour_mode;
+	int ch_blend;
+} TRIM_Sprite;
 
 typedef struct {
-	tcolour *img;
+	TRIM_Color *img;
 	int w, h;
-} ttexture;
+} TRIM_Texture;
 
 /*
 typedef struct {
@@ -181,13 +190,13 @@ typedef struct {
 } tpoint;
 
 typedef struct {
-	ttexture tex;
+	TRIM_Texture tex;
 	tpoint point[4];
 	int n_points;
 } tpolygon;
 */
 
-static const tcolour _trim_16cp[] = {
+static const TRIM_Color _TRIM_16cp[] = {
 	{  0,   0,   0, 255}, {  0,   0, 128, 255},
 	{  0, 128,   0, 255}, {  0, 128, 128, 255},
 	{128,   0,   0, 255}, {128,   0, 128, 255},
@@ -198,49 +207,55 @@ static const tcolour _trim_16cp[] = {
 	{255, 255,   0, 255}, {255, 255, 255, 255}
 };
 
-int trim_kb_mode;
-int trim_keycode[TRIM_NKEYS];
+int TRIM_kb_mode;
+int TRIM_keycode[TRIM_NKEYS];
 
-tkey *trim_old_kbst;
-tkey *trim_cur_kbst;
-int trim_old_kbsize;
-int trim_cur_kbsize;
+TRIM_Key *TRIM_old_kbst;
+TRIM_Key *TRIM_cur_kbst;
+int TRIM_old_kbsize;
+int TRIM_cur_kbsize;
 
-tsprite *trim_screen;
-int trim_old_w;
-int trim_old_h;
+TRIM_Sprite *TRIM_screen;
+int TRIM_old_w;
+int TRIM_old_h;
 
-void trim_initkb(int kb_mode);
+// input
+void TRIM_InitKB(int kb_mode);
 
-void trim_pollkb(void);
-int trim_getkey(void);
+void TRIM_PollKB(void);
+int TRIM_GetKey(void);
 
-int trim_keydown(int key);
-int trim_keyheld(int key);
-int trim_keyup(int key);
+int TRIM_KeyDown(int key);
+int TRIM_KeyHeld(int key);
+int TRIM_KeyUp(int key);
 
-void trim_closekb(void);
+void TRIM_CloseKB(void);
 
-void trim_initvideo(int mode);
-void trim_closevideo();
+// tvideo
+void TRIM_InitVideo(int mode);
+void TRIM_CloseVideo(int keep_screen);
 
-int trim_openbmp(ttexture *tex, char *name);
+void TRIM_GetConsoleSize(int *w, int *h);
+int TRIM_SetConsoleSize(int w, int h);
 
-void trim_blendcolour(tcolour *dst, tcolour *src);
+void TRIM_CreatePixel(TRIM_Pixel *p, TRIM_Color *bg, TRIM_Color *fg, char ch);
+TRIM_Sprite *TRIM_CreateSprite(int w, int h, int x, int y, int mode);
 
-void trim_createpixel(tpixel *p, tcolour *bg, tcolour *fg, char ch);
-tsprite *trim_createsprite(int w, int h, int x, int y, int mode);
+void TRIM_FillSprite(TRIM_Sprite *spr, TRIM_Pixel *p);
+void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src);
+void TRIM_ResizeSprite(TRIM_Sprite *s, int w, int h);
 
-void trim_fillsprite(tsprite *spr, tpixel *p);
-void trim_applysprite(tsprite *dst, tsprite *src);
-void trim_printsprite(tsprite *spr, char *str, int x, int y, int lr);
-void trim_resizesprite(tsprite *s, int w, int h);
+void TRIM_DrawSprite(TRIM_Sprite *s);
 
-//void trim_renderpolygon(ttexture *tex, tpolygon *poly);
-void trim_scaletexture(ttexture *dst, ttexture *src, int w, int h);
-void trim_rendertexture(tsprite *spr, ttexture *tex, int x, int y, int w, int h);
+void TRIM_CloseSprite(TRIM_Sprite *s);
 
-void trim_drawsprite(tsprite *s);
-void trim_closesprite(tsprite *s);
+//tgfx
+int TRIM_OpenBMP(TRIM_Texture *tex, char *name);
+
+void TRIM_BlendColour(TRIM_Color *dst, TRIM_Color *src);
+
+//void TRIM_renderpolygon(TRIM_Texture *tex, tpolygon *poly);
+void TRIM_ScaleTexture(TRIM_Texture *dst, TRIM_Texture *src, int w, int h);
+void TRIM_RenderTexture(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h);
 
 #endif
