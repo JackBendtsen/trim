@@ -1,4 +1,4 @@
-#include "trim.h"
+#include "../include/trim.h"
 
 void gotoyx(int y, int x) {
 #ifdef _WIN32_
@@ -92,21 +92,22 @@ void TRIM_DrawScreen(void) {
 
 #endif
 
-void TRIM_CloseSprite(TRIM_Sprite *s) {
-	if (!s) return;
-	if (s->pix) free(s->pix);
-	if (s->ch) free(s->ch);
-	memset(s, 0, sizeof(TRIM_Sprite));
-	free(s);
+void TRIM_ClearScreen(void) {
+	TRIM_FillPixelBuffer(TRIM_Screen, NULL);
+	TRIM_FillCharBuffer(TRIM_Screen, 0);
 }
 
 void TRIM_ResizeScreen(void) {
-	TRIM_old_w = TRIM_screen->w;
-	TRIM_old_h = TRIM_screen->h;
+	TRIM_old_w = TRIM_Screen->w;
+	TRIM_old_h = TRIM_Screen->h;
 
 	int w = 0, h = 0;
 	TRIM_GetConsoleSize(&w, &h);
-	TRIM_ResizeSprite(TRIM_screen, w, h);
+	TRIM_ResizeSprite(TRIM_Screen, w, h);
+}
+
+void resize_screen(int a) {
+	TRIM_ResizeScreen();
 }
 
 void TRIM_GetConsoleSize(int *w, int *h) {
@@ -123,6 +124,10 @@ void TRIM_GetConsoleSize(int *w, int *h) {
 	if (w) *w = win.ws_col;
 	if (h) *h = win.ws_row;
 #endif
+}
+
+int TRIM_SetConsoleSize(int w, int h) {
+	return 0;
 }
 
 void TRIM_InitVideo(int mode) {
@@ -142,13 +147,12 @@ void TRIM_InitVideo(int mode) {
 #endif
 	TRIM_GetConsoleSize(&TRIM_old_w, &TRIM_old_h);
 	TRIM_Screen = TRIM_CreateSprite(TRIM_old_w, TRIM_old_h, 0, 0);
+	TRIM_DrawScreen();
 }
 
 void TRIM_CloseVideo(int keep_screen) {
 	if (!keep_screen) {
-		TRIM_FillPixelBuffer(TRIM_Screen, NULL, NULL);
-		free(TRIM_Screen->ch);
-		TRIM_Screen->ch = NULL;
+		TRIM_ClearScreen();
 		TRIM_DrawScreen();
 	}
 	TRIM_CloseSprite(TRIM_Screen);

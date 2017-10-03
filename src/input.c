@@ -1,4 +1,4 @@
-#include "trim.h"
+#include "../include/trim.h"
 
 /*
 In a Unix terminal application, there seem to be two main ways to read input in a manner suitable for non-printing.
@@ -35,7 +35,7 @@ void TRIM_InitKB(int kb_mode) {
 		0x2c, 0x91, 0x13, 0x2d, 0x24, 0x21, 0x2e, 0x23, 0x22, 0x26, 0x25, 0x28, 0x27,
 		0x90, 0x6f, 0x6a, 0x6d, 0x67, 0x68, 0x69, 0x6b, 0x64, 0x65, 0x66, 0x61, 0x62, 0x63, 0x0d, 0x60, 0x6e
 	};
-	memcpy((int*)TRIM_keycode, &kc[0], sizeof(kc));
+	memcpy(&TRIM_Keycodes[0], &kc[0], sizeof(kc));
 #else
 	TRIM_kbfd = -1;
 
@@ -53,14 +53,14 @@ void TRIM_InitKB(int kb_mode) {
 	fcntl(0, F_SETFL, flags);
 
 	/* turn off buffering, echo and key processing */
-	tcgetattr(0, &_tty_old);
-	tty = _tty_old;
+	tcgetattr(0, &TRIM_tty_old);
+	tty = TRIM_tty_old;
 	tty.c_lflag &= ~(ICANON | ECHO | ISIG);
 	tty.c_iflag &= ~(ISTRIP | INLCR | ICRNL | IGNCR | IXON | IXOFF);
 	tcsetattr(0, TCSANOW, &tty);
 
-	FD_ZERO(&_TRIM_fdset);
-	FD_SET(0, &_TRIM_fdset);
+	FD_ZERO(&TRIM_fdset);
+	FD_SET(0, &TRIM_fdset);
 
 	if (kb_mode == TRIM_DEFKB) {
 		int kc[] = {
@@ -73,7 +73,7 @@ void TRIM_InitKB(int kb_mode) {
 			0xff, 0xff, 0xff, 0x1b5b327e, 0x1b5b48, 0x1b5b357e, 0x1b5b337e, 0x1b5b46, 0x1b5b367e, 0x1b5b41, 0x1b5b44, 0x1b5b42, 0x1b5b43,
 			0xff, 0x2f, 0x2a, 0x2d, 0x37, 0x38, 0x39, 0x2b, 0x34, 0x35, 0x36, 0x31, 0x32, 0x33, 0x0d, 0x30, 0x2e
 		};
-		memcpy((int*)TRIM_keycode, &kc[0], sizeof(kc));
+		memcpy(&TRIM_Keycodes[0], &kc[0], sizeof(kc));
 		
 		TRIM_kbfd = 0;
 		TRIM_input = 1;
@@ -104,9 +104,9 @@ void TRIM_InitKB(int kb_mode) {
 			if (bits[i] != "C0B"[i]-'0') break;
 
 		if (i == 3) {
-			_TRIM_kb_mode = TRIM_RAWKB;
-			FD_ZERO(&_TRIM_fdset);
-			FD_SET(TRIM_kbfd, &_TRIM_fdset);
+			TRIM_kb_mode = TRIM_RAWKB;
+			FD_ZERO(&TRIM_fdset);
+			FD_SET(TRIM_kbfd, &TRIM_fdset);
 			break;
 		}
 		close(TRIM_kbfd);
@@ -122,10 +122,17 @@ void TRIM_InitKB(int kb_mode) {
 		0x63, 0x46, 0x77, 0x6e, 0x66, 0x68, 0x6f, 0x6b, 0x6d, 0x67, 0x69, 0x6c, 0x6a,
 		0x45, 0x62, 0x37, 0x4a, 0x47, 0x48, 0x49, 0x4e, 0x4b, 0x4c, 0x4d, 0x4f, 0x50, 0x51, 0x60, 0x52, 0x53
 	};
-	memcpy((int*)TRIM_keycode, &kc[0], sizeof(kc));
+	memcpy(&TRIM_Keycodes[0], &kc[0], sizeof(kc));
 #endif /* #ifndef _WIN32_ */
 
 	TRIM_input = 1;
+}
+
+int indexOf(int *set, int sz, int n) {
+	if (!set || sz < 1) return -1;
+	int i;
+	for (i = 0; i < sz; i++) if (set[i] == n) return i;
+	return -1;
 }
 
 void TRIM_ReadInput(int *key, int wait) {
@@ -151,26 +158,29 @@ void TRIM_ReadInput(int *key, int wait) {
 		}
 
 		u8 buf[16] = {0};
-		if (wait) select(1, &_TRIM_fdset, NULL, NULL, NULL);
+		if (wait) select(1, &TRIM_fdset, NULL, NULL, NULL);
 		read(0, &buf[0], 16);
 
 		int value = 0, l = 0;
-		for (i = sz-1; i >= 0 && l < 4; i--) {
+		for (i = 15; i >= 0 && l < 4; i--) {
 			if (buf[i] || l) {
 				value |= (int)buf[i] << (l * 8);
 				l++;
 			}
 		}
 
+		int idx = indexOf(TRIM_Keycodes, TRIM_NKEYS, value);
+		if (idx < 0) return;
+
 		for (i = 0; i < TRIM_cur_kbsize; i++) {
-			if (TRIM_cur_kbst[i].code == value) {
+			if (TRIM_cur_kbst[i].idx == idx) {
 				TRIM_cur_kbst[i].state = 1;
 				break;
 			}
 		}
 		if (i == TRIM_cur_kbsize) {
 			TRIM_cur_kbst = realloc(TRIM_cur_kbst, ++TRIM_cur_kbsize * sizeof(TRIM_Key));
-			TRIM_cur_kbst[i].code = value;
+			TRIM_cur_kbst[i].idx = idx;
 			TRIM_cur_kbst[i].state = 1;
 		}
 		if (key) *key = i;
@@ -179,7 +189,7 @@ void TRIM_ReadInput(int *key, int wait) {
   #ifdef __linux__
 		struct input_event ev[64];
 
-		if (wait) select(1, &_TRIM_fdset, NULL, NULL, NULL);
+		if (wait) select(1, &TRIM_fdset, NULL, NULL, NULL);
 		int r = read(TRIM_kbfd, ev, sizeof(ev));
 		if (r < 0) {
 			printf("Could not read from evdev (fd: %d, r: %d)\n", TRIM_kbfd, r);
@@ -189,15 +199,18 @@ void TRIM_ReadInput(int *key, int wait) {
 		int i, j, n_events = r / sizeof(struct input_event);
 		for (i = 0; i < n_events; i++) {
 			if (ev[i].type > 1) continue;
+			int idx = indexOf(TRIM_Keycodes, TRIM_NKEYS, ev[i].code);
+			if (idx < 0) continue;
+
 			for (j = 0; j < TRIM_cur_kbsize; j++) {
-				if (TRIM_cur_kbst[j].code == ev[i].code) {
+				if (TRIM_cur_kbst[j].idx == idx) {
 					TRIM_cur_kbst[j].state = ev[i].value;
 					break;
 				}
 			}
 			if (j == TRIM_cur_kbsize) {
 				TRIM_cur_kbst = realloc(TRIM_cur_kbst, ++TRIM_cur_kbsize * sizeof(TRIM_Key));
-				TRIM_cur_kbst[j].code = ev[i].code;
+				TRIM_cur_kbst[j].idx = idx;
 				TRIM_cur_kbst[j].state = ev[i].value;
 			}
 		}
@@ -214,28 +227,28 @@ void TRIM_CloseKB(void) {
 	if (TRIM_old_kbst) free(TRIM_old_kbst);
 	if (TRIM_cur_kbst) free(TRIM_cur_kbst);
 
+#ifdef _WIN32_
 	int flags = fcntl(0, F_GETFL);
 	flags &= ~O_NONBLOCK;
 	fcntl(0, F_SETFL, flags);
-	tcsetattr(0, TCSANOW, &_tty_old);
+	tcsetattr(0, TCSANOW, &TRIM_tty_old);
 
 	if (TRIM_kbfd > 0) close(TRIM_kbfd);
+#endif
 
 	TRIM_input = 0;
 }
-
-#endif /* ifndef _WIN32_ */
 
 void TRIM_PollKB(void) {
 	TRIM_ReadInput(NULL, 0);
 }
 
 int TRIM_GetKey(void) {
-	if (!TRIM_input) return;
+	if (!TRIM_input) return 0;
 
 	int key = 0;
 	TRIM_ReadInput(&key, 1);
-	if (TRIM_cur_kbst && key < TRIM_cur_kbsize) return TRIM_cur_kbst[key].code;
+	if (TRIM_cur_kbst && key < TRIM_cur_kbsize) return TRIM_cur_kbst[key].idx;
 	return key;
 }
 
@@ -244,7 +257,7 @@ int TRIM_KeyDown(int key) {
 
 	int i;
 	for (i = 0; i < TRIM_cur_kbsize; i++) {
-		if (TRIM_cur_kbst[i].code == key && (i >= TRIM_old_kbsize ||
+		if (TRIM_cur_kbst[i].idx == key && (i >= TRIM_old_kbsize ||
 		    (TRIM_old_kbst[i].state == 0 && TRIM_cur_kbst[i].state == 1))) {
 			return 1;
 		}
@@ -257,7 +270,7 @@ int TRIM_KeyHeld(int key) {
 
 	int i;
 	for (i = 0; i < TRIM_cur_kbsize; i++) {
-		if (TRIM_cur_kbst[i].code == key && TRIM_cur_kbst[i].state == 1) {
+		if (TRIM_cur_kbst[i].idx == key && TRIM_cur_kbst[i].state == 1) {
 			return 1;
 		}
 	}
@@ -269,7 +282,7 @@ int TRIM_KeyUp(int key) {
 
 	int i;
 	for (i = 0; i < TRIM_old_kbsize; i++) {
-		if (TRIM_cur_kbst[i].code == key &&
+		if (TRIM_cur_kbst[i].idx == key &&
 		    TRIM_old_kbst[i].state == 1 &&
 		    TRIM_cur_kbst[i].state == 0) {
 			return 1;

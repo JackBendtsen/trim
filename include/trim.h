@@ -1,3 +1,6 @@
+#ifndef TRIM_H
+#define TRIM_H
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +21,7 @@
     #include <linux/kd.h>
     #include <linux/input.h>
   #endif
-  struct termios _TRIM_tty_old;
+  struct termios TRIM_tty_old;
   int TRIM_kbfd;
   fd_set TRIM_fdset;
 #endif
@@ -207,15 +210,18 @@ static const TRIM_Color _TRIM_16cp[] = {
 	{255, 255,   0, 255}, {255, 255, 255, 255}
 };
 
+int TRIM_input;
 int TRIM_kb_mode;
-int TRIM_keycode[TRIM_NKEYS];
+int TRIM_Keycodes[TRIM_NKEYS];
 
 TRIM_Key *TRIM_old_kbst;
 TRIM_Key *TRIM_cur_kbst;
 int TRIM_old_kbsize;
 int TRIM_cur_kbsize;
 
-TRIM_Sprite *TRIM_screen;
+int TGFX_mode;
+
+TRIM_Sprite *TRIM_Screen;
 int TRIM_old_w;
 int TRIM_old_h;
 
@@ -231,31 +237,47 @@ int TRIM_KeyUp(int key);
 
 void TRIM_CloseKB(void);
 
-// tvideo
+// video
 void TRIM_InitVideo(int mode);
 void TRIM_CloseVideo(int keep_screen);
 
 void TRIM_GetConsoleSize(int *w, int *h);
 int TRIM_SetConsoleSize(int w, int h);
 
-void TRIM_CreatePixel(TRIM_Pixel *p, TRIM_Color *bg, TRIM_Color *fg, char ch);
-TRIM_Sprite *TRIM_CreateSprite(int w, int h, int x, int y, int mode);
+void TRIM_DrawScreen(void);
+void TRIM_ClearScreen(void);
+void TRIM_ResizeScreen(void);
 
-void TRIM_FillSprite(TRIM_Sprite *spr, TRIM_Pixel *p);
+// gfx
+
+#ifndef _WIN32_
+
+int TRIM_to256(TRIM_Color *c);
+int TRIM_to16(TRIM_Color *c);
+int TRIM_16to256(int x);
+
+#endif
+
+void TRIM_BlendColor(TRIM_Color *dst, TRIM_Color *src);
+
+void TRIM_CreatePixel(TRIM_Pixel *p, TRIM_Color *bg, TRIM_Color *fg);
+void TRIM_FillPixelBuffer(TRIM_Sprite *spr, TRIM_Pixel *p);
+void TRIM_FillCharBuffer(TRIM_Sprite *spr, char c);
+void TRIM_ApplyText(TRIM_Sprite *spr, char *text, int x, int y);
+void TRIM_ApplyTextBox(TRIM_Sprite *spr, char *text, int pos, int x, int y, int w, int h);
+
+TRIM_Sprite *TRIM_CreateSprite(int w, int h, int x, int y);
+void TRIM_CloseSprite(TRIM_Sprite *s);
+
 void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src);
 void TRIM_ResizeSprite(TRIM_Sprite *s, int w, int h);
 
-void TRIM_DrawSprite(TRIM_Sprite *s);
-
-void TRIM_CloseSprite(TRIM_Sprite *s);
-
-//tgfx
-int TRIM_OpenBMP(TRIM_Texture *tex, char *name);
-
-void TRIM_BlendColour(TRIM_Color *dst, TRIM_Color *src);
+void TRIM_ApplyTextureToSprite(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h);
 
 //void TRIM_renderpolygon(TRIM_Texture *tex, tpolygon *poly);
 void TRIM_ScaleTexture(TRIM_Texture *dst, TRIM_Texture *src, int w, int h);
-void TRIM_RenderTexture(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h);
+void TRIM_ApplyTextureToSprite(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h);
+
+int TRIM_OpenBMP(TRIM_Texture *tex, char *name);
 
 #endif

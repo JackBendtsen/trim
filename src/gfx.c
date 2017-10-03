@@ -1,6 +1,8 @@
-#include "trim.h"
+#include "../include/trim.h"
 
-int TRIM_To256(TRIM_Color *c) {
+#ifndef _WIN32_
+
+int TRIM_to256(TRIM_Color *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
 	int g = ((int)c->g * (int)c->a) / 0xff;
 	int b = ((int)c->b * (int)c->a) / 0xff;
@@ -18,7 +20,7 @@ int TRIM_To256(TRIM_Color *c) {
 	return ((lum * 0x18) / 256) + 0xe8;
 }
 
-int TRIM_To16(TRIM_Color *c) {
+int TRIM_to16(TRIM_Color *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
 	int g = ((int)c->g * (int)c->a) / 0xff;
 	int b = ((int)c->b * (int)c->a) / 0xff;
@@ -53,6 +55,8 @@ int TRIM_16to256(int x) {
 	};
 	return p[x];
 }
+
+#endif
 
 void TRIM_BlendColor(TRIM_Color *dst, TRIM_Color *src) {
 	if (!dst) return;
@@ -112,6 +116,14 @@ TRIM_Sprite *TRIM_CreateSprite(int w, int h, int x, int y) {
 	return spr;
 }
 
+void TRIM_CloseSprite(TRIM_Sprite *s) {
+	if (!s) return;
+	if (s->pix) free(s->pix);
+	if (s->ch) free(s->ch);
+	memset(s, 0, sizeof(TRIM_Sprite));
+	free(s);
+}
+
 void TRIM_FillPixelBuffer(TRIM_Sprite *spr, TRIM_Pixel *p) {
 	if (!spr) return;
 
@@ -127,20 +139,22 @@ void TRIM_FillPixelBuffer(TRIM_Sprite *spr, TRIM_Pixel *p) {
 }
 
 void TRIM_FillCharBuffer(TRIM_Sprite *spr, char c) {
-	if (!spr || spr->w < 1 || spr->h < 1 || c < 0x20 || c > 0x7e) return;
+	if (!spr || spr->w < 1 || spr->h < 1) return;
 
 	int spr_sz = spr->w * spr->h;
 	if (!spr->ch) spr->ch = calloc(spr_sz + 1, 1);
 
+	if (c < 0x20 || c > 0x7e) c = ' ';
 	memset(spr->ch, c, spr_sz);
 }
 
-void TRIM_ApplyText(TRIM_Sprite *s, char *text, int x, int y) {
-	if (!s || !text || !strlen(text)) return;
+void TRIM_ApplyText(TRIM_Sprite *spr, char *text, int x, int y) {
+	if (!text || !strlen(text)) return;
+	if (!spr) spr = TRIM_Screen;
 
-	int pos = (y * s->w) + x;
+	int pos = (y * spr->w) + x;
 	int off = 0;
-	int ssz = s->w * s->h;
+	int ssz = spr->w * spr->h;
 	int len = strlen(text);
 
 	if (pos <= -len || pos >= ssz) return;
@@ -149,23 +163,25 @@ void TRIM_ApplyText(TRIM_Sprite *s, char *text, int x, int y) {
 		pos = 0;
 	}
 
-	if (!s->ch) TRIM_FillCharBuffer(s, ' ');
+	if (!spr->ch) TRIM_FillCharBuffer(spr, ' ');
 
 	int i;
 	for (i = pos; i < ssz && i < pos + (len - off); i++) {
-		s->ch[i] = text[i-pos];
+		spr->ch[i] = text[i-pos];
 	}
 }
 
-void TRIM_ApplyTextBox(TRIM_Sprite *s, char *text, int pos, int x, int y, int w, int h) {
-	if (!s || !text || !strlen(text) || pos < 0 || pos >= strlen(text)) return;
-	if (w < 1 || h < 1 || x <= -w || x >= s->w || y <= -h || y >= s->h) return;
+void TRIM_ApplyTextBox(TRIM_Sprite *spr, char *text, int pos, int x, int y, int w, int h) {
+	if (!text || !strlen(text) || pos < 0 || pos >= strlen(text)) return;
 
-	if (!s->ch) TRIM_FillCharBuffer(s, ' ');
+	if (!spr) spr = TRIM_Screen;
+	if (w < 1 || h < 1 || x <= -w || x >= spr->w || y <= -h || y >= spr->h) return;
+
+	if (!spr->ch) TRIM_FillCharBuffer(spr, ' ');
 
 	int i;
 	for (i = pos; i < w*h && i < pos+strlen(text); i++) {
-		s->ch[(y + (i / w)) * w + (x + (i % w))] = text[i-pos];
+		spr->ch[(y + (i / w)) * w + (x + (i % w))] = text[i-pos];
 	}
 }
 
@@ -191,7 +207,7 @@ void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src) {
 	if (h > dst->h - dy) h = dst->h - dy;
 
 	char *sc = src->ch;
-	char *dc = dc->ch;
+	char *dc = dst->ch;
 
 	int i, j;
 	for (i = 0; i < h; i++) {
@@ -207,35 +223,43 @@ void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src) {
 	}
 }
 
-void TRIM_ResizeSprite(TRIM_Sprite *s, int w, int h) {
-	if (!s || w < 1 || h < 1) return;
+void TRIM_ResizeSprite(TRIM_Sprite *spr, int w, int h) {
+	if (!spr || w < 1 || h < 1 || (spr->w == w && spr->h == h)) return;
 
-	s->pix = realloc(s->pix, w * h * sizeof(TRIM_Pixel));
+	spr->pix = realloc(spr->pix, w * h * sizeof(TRIM_Pixel));
+	spr->ch = realloc(spr->ch, w * h);
 
 	TRIM_Pixel ep = {0};
-	TRIM_CreatePixel(&ep, NULL, NULL, ' ');
+	TRIM_CreatePixel(&ep, NULL, NULL);
+
 	int i, j;
-	if (w > s->w) {
+	if (w > spr->w) {
 		for (i = h-1; i >= 0; i--) {
-			if (i) memmove(s->pix + i*w, s->pix + i*s->w, s->w * sizeof(TRIM_Pixel));
-			for (j = s->w; j < w; j++) {
-				memcpy(&s->pix[i*w + j], &ep, sizeof(TRIM_Pixel));
+			if (i) {
+				memmove(spr->pix + i*w, spr->pix + i*spr->w, spr->w * sizeof(TRIM_Pixel));
+				memmove(spr->ch + i*w, spr->ch + i*spr->w, spr->w);
 			}
+			for (j = spr->w; j < w; j++) {
+				memcpy(&spr->pix[i*w + j], &ep, sizeof(TRIM_Pixel));
+			}
+			memset(spr->ch + i*w + spr->w, ' ', w - spr->w);
 		}
 	}
-	if (h > s->h) {
-		for (i = s->h; i < h; i++) {
+	if (h > spr->h) {
+		for (i = spr->h; i < h; i++) {
 			for (j = 0; j < w; j++) {
-				memcpy(&s->pix[i*w + j], &ep, sizeof(TRIM_Pixel));
+				memcpy(&spr->pix[i*w + j], &ep, sizeof(TRIM_Pixel));
 			}
 		}
+		memset(spr->ch + w * spr->h, ' ', w * (h - spr->h));
 	}
-	s->w = w;
-	s->h = h;
+	spr->w = w;
+	spr->h = h;
 }
 
-void TRIM_CreateSpriteFromTexture(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h) {
-	if (!spr || !tex) return;
+void TRIM_ApplyTextureToSprite(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h) {
+	if (!tex) return;
+	if (!spr) spr = TRIM_Screen;
 
 	TRIM_Texture sc_tex = {0};
 	TRIM_ScaleTexture(&sc_tex, tex, w, h);
@@ -247,12 +271,12 @@ void TRIM_CreateSpriteFromTexture(TRIM_Sprite *spr, TRIM_Texture *tex, int x, in
 	new_spr.w = sc_tex.w;
 	new_spr.h = sc_tex.h;
 	new_spr.pix = calloc(sc_tex.w * sc_tex.h, sizeof(TRIM_Pixel));
+	// no char buffer needed
 
 	int i;
 	for (i = 0; i < sc_tex.w * sc_tex.h; i++) {
 		memcpy(&new_spr.pix[i].bg, &sc_tex.img[i], sizeof(TRIM_Color));
 		memset(&new_spr.pix[i].fg, 0, sizeof(TRIM_Color));
-		new_spr.pix[i].ch = ' ';
 	}
 	free(sc_tex.img);
 
@@ -284,7 +308,7 @@ struct scaler {
 	void (*func)(void *dst, void *src, struct scaler *sd);
 };
 
-void scale_data(void *dst, void *src, scaler *sd) {
+void scale_data(void *dst, void *src, struct scaler *sd) {
 	if (!dst || !src || !sd) return;
 
 	float pos = 0.0, factor = sd->factor;
@@ -328,7 +352,7 @@ inline float set_range(float in, float low, float high) {
 	return in;
 }
 
-void resize_pixel(void *dst, void *src, scaler *sd) {
+void resize_pixel(void *dst, void *src, struct scaler *sd) {
 	tclf *d = (tclf*)dst;
 	TRIM_Color *s = (TRIM_Color*)src;
 
@@ -377,8 +401,7 @@ void TRIM_ScaleTexture(TRIM_Texture *dst, TRIM_Texture *src, int w, int h) {
 
 	dst->img = calloc(dst->w * dst->h, sizeof(TRIM_Color));
 
-	scaler w_rs = {0};
-	scaler h_rs = {0};
+	struct scaler w_rs = {0}, h_rs = {0};
 
 	w_rs.size = src->w;
 	w_rs.factor = x_sc;
