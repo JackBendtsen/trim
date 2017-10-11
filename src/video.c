@@ -1,26 +1,29 @@
 #include "../include/trim.h"
 
-void gotoyx(int y, int x) {
-#ifdef _WIN32_
-	COORD pos = {x, y};
-	SetConsoleCursorPosition(TRIM_wch, pos);
-#else
-	printf("\x1b[%d;%dH", y+1, x+1);
+#ifdef _WIN32
+  HANDLE TRIM_wch;
 #endif
-}
 
-#ifdef _WIN32_
+int TGFX_mode = 0;
+
+TRIM_Sprite *TRIM_Screen = NULL;
+int TRIM_old_w = 0;
+int TRIM_old_h = 0;
+
+#ifdef _WIN32
 
 void TRIM_DrawScreen(void) {
 	TRIM_Sprite *s = TRIM_Screen;
 	if (!s) return;
+
+	TRIM_ResizeScreen();
 
 	// Print the characters to the screen first
 	int size = s->w * s->h;
 	COORD pos = {0, 0};
 	if (s->ch) WriteConsoleOutputCharacter(TRIM_wch, s->ch, size, pos, NULL);
 
-	u8 *colours = calloc(size, 1);
+	short *colours = calloc(size, sizeof(short));
 	int i, bg, fg;
 
 	// Then get a list of the colours of each pixel
@@ -33,30 +36,35 @@ void TRIM_DrawScreen(void) {
 		colours[i] = (bg << 4) | fg;
 	}
 
-	//  Finally, find write the colours in streaks of pixels
-	// to reduce the number of calls to the Win32 console API
-	int idx = 0;
-	for (i = 0; i < size; i++) {
-		if (i == size-1 || colours[i] != colours[i+1]) {
-			pos = {idx % s->w, idx / s->w};
-			WriteConsoleOutputAttribute(TRIM_wch, &colours[idx], i-idx+1, pos, NULL);
-			idx = i+1;
-		}
-	}
-
+	WriteConsoleOutputAttribute(TRIM_wch, colours, size, pos, NULL);
 	free(colours);
 }
 
 #else
 
+inline void byte2str(char *str, int byte) {
+	str[0] = '0' + ((byte / 100) % 10);
+	str[1] = '0' + ((byte / 10) % 10);
+	str[2] = '0' + (byte % 10);
+}
+
 void TRIM_DrawScreen(void) {
 	TRIM_Sprite *s = TRIM_Screen;
 	if (!s) return;
 
-	char c = 0, *endl = NULL;
+	TRIM_ResizeScreen();
+
+	char *print_pos = strdup("\x1b[000;000H");
+	char *print_256 = strdup("\x1b[48;5;000m\x1b[38;5;000m");
+	char *print_rgb = strdup("\x1b[48;2;000;000;000m\x1b[38;2;000;000;000m");
+
+	char c = 0;
 	int i, j, p = 0;
 	for (i = 0; i < s->h; i++) {
-		gotoyx(s->y + i, s->x);
+		// Set console cursor position
+		byte2str(print_pos + 2, s->y + i + 1);
+		byte2str(print_pos + 6, s->x + 1);
+		write(1, print_pos, 10);
 
 		for (j = 0; j < s->w; j++, p++) {
 			TRIM_BlendColor(&s->pix[p].bg, NULL);
@@ -64,30 +72,40 @@ void TRIM_DrawScreen(void) {
 
 			int bg = 0, fg = 0;
 			if (TGFX_mode == TGFX_16) {
-				bg = TRIM_16to256(TRIM_to16(&s->pix[p].bg));
-				fg = TRIM_16to256(TRIM_to16(&s->pix[p].fg));
-				printf("\x1b[48;5;%dm\x1b[38;5;%dm", bg, fg);
+				// Print 16-colour "pixel"
+				byte2str(print_256 + 7, TRIM_16to256(TRIM_to16(&s->pix[p].bg)));
+				byte2str(print_256 + 18, TRIM_16to256(TRIM_to16(&s->pix[p].fg)));
+				write(1, print_256, 22);
 			}
 			else if (TGFX_mode == TGFX_256) {
-				bg = TRIM_to256(&s->pix[p].bg);
-				fg = TRIM_to256(&s->pix[p].fg);
-				printf("\x1b[48;5;%dm\x1b[38;5;%dm", bg, fg);
+				// Print 256-colour "pixel"
+				byte2str(print_256 + 7, TRIM_to256(&s->pix[p].bg));
+				byte2str(print_256 + 18, TRIM_to256(&s->pix[p].fg));
+				write(1, print_256, 22);
 			}
 			else if (TGFX_mode == TGFX_RGB) {
-				printf("\x1b[48;2;%d;%d;%dm", s->pix[p].bg.r, s->pix[p].bg.g, s->pix[p].bg.b);
-				printf("\x1b[38;2;%d;%d;%dm", s->pix[p].fg.r, s->pix[p].fg.g, s->pix[p].fg.b);
+				// Print RGB "pixel"
+				byte2str(print_rgb + 7, s->pix[p].bg.r);
+				byte2str(print_rgb + 11, s->pix[p].bg.g);
+				byte2str(print_rgb + 15, s->pix[p].bg.b);
+				byte2str(print_rgb + 26, s->pix[p].fg.r);
+				byte2str(print_rgb + 30, s->pix[p].fg.g);
+				byte2str(print_rgb + 34, s->pix[p].fg.b);
+				write(1, print_rgb, 38);
 			}
 
-			if (s->ch) {
-				c = s->ch[p];
-				putchar((c > 0x1f && c < 0x7f) ? c : ' ');
-			}
-			else putchar(' ');
+			c = ' ';
+			if (s->ch && s->ch[p] > ' ' && s->ch[p] <= '~') c = s->ch[p];
+			write(1, &c, 1);
 			//fflush(stdout);
 		}
-		printf("\x1b[0m");
-		fflush(stdout);
+		write(1, "\x1b[0m", 4);
+		//fflush(stdout);
 	}
+
+	free(print_pos);
+	free(print_256);
+	free(print_rgb);
 }
 
 #endif
@@ -106,12 +124,12 @@ void TRIM_ResizeScreen(void) {
 	TRIM_ResizeSprite(TRIM_Screen, w, h);
 }
 
-void resize_screen(int a) {
-	TRIM_ResizeScreen();
+TRIM_Sprite *TRIM_GetScreen(void) {
+	return TRIM_Screen;
 }
 
 void TRIM_GetConsoleSize(int *w, int *h) {
-#ifdef _WIN32_
+#ifdef _WIN32
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(TRIM_wch, &csbi);
 
@@ -131,8 +149,9 @@ int TRIM_SetConsoleSize(int w, int h) {
 }
 
 void TRIM_InitVideo(int mode) {
-#ifdef _WIN32_
+#ifdef _WIN32
 	TRIM_wch = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+	SetConsoleActiveScreenBuffer(TRIM_wch);
 	TGFX_mode = TGFX_16;
 /*
 	COORD pos = {0, 0};
@@ -140,7 +159,6 @@ void TRIM_InitVideo(int mode) {
 */
 #else
 	printf("\x1b[?25l\x1b[?7l");
-	signal(SIGWINCH, resize_screen);
 
 	mode = mode < 0 ? 0 : mode;
 	TGFX_mode = mode > 2 ? 2 : mode;
@@ -157,9 +175,17 @@ void TRIM_CloseVideo(int keep_screen) {
 	}
 	TRIM_CloseSprite(TRIM_Screen);
 
-#ifdef _WIN32_
+#ifdef _WIN32
+	SetConsoleActiveScreenBuffer(GetStdHandle(STD_OUTPUT_HANDLE));
 	CloseHandle(TRIM_wch);
 #else
 	printf("\x1b[?7h\x1b[?25h\n");
 #endif
+}
+
+void debug_ptr(char *file, char *name, void *ptr) {
+	if (!file) return;
+	FILE *f = fopen(file, "w");
+	fprintf(f, "%s: %p", name ? name : "TRIM_Screen", name ? ptr : TRIM_Screen);
+	fclose(f);
 }

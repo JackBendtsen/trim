@@ -1,6 +1,19 @@
 #include "../include/trim.h"
 
-#ifndef _WIN32_
+typedef unsigned char u8;
+
+const TRIM_Color _TRIM_16cp[] = {
+	{  0,   0,   0, 255}, {  0,   0, 128, 255},
+	{  0, 128,   0, 255}, {  0, 128, 128, 255},
+	{128,   0,   0, 255}, {128,   0, 128, 255},
+	{128, 128,   0, 255}, {192, 192, 192, 255},
+	{128, 128, 128, 255}, {  0,   0, 255, 255},
+	{  0, 230,   0, 255}, {  0, 255, 255, 255},
+	{255,   0,   0, 255}, {255,   0, 255, 255},
+	{255, 255,   0, 255}, {255, 255, 255, 255}
+};
+
+#ifndef _WIN32
 
 int TRIM_to256(TRIM_Color *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
@@ -19,6 +32,20 @@ int TRIM_to256(TRIM_Color *c) {
 	}
 	return ((lum * 0x18) / 256) + 0xe8;
 }
+
+int TRIM_16to256(int x) {
+	if (x < 0 || x > 15) return 0;
+
+	int p[] = {
+		0x10, 0x12, 0x1c, 0x1e,
+		0x58, 0x5a, 0x64, 0xfa,
+		0xf4, 0x15, 0x2e, 0x33,
+		0xc4, 0xc9, 0xe2, 0xe7
+	};
+	return p[x];
+}
+
+#endif
 
 int TRIM_to16(TRIM_Color *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
@@ -43,20 +70,6 @@ int TRIM_to16(TRIM_Color *c) {
 
 	return idx;
 }
-
-int TRIM_16to256(int x) {
-	if (x < 0 || x > 15) return 0;
-
-	int p[] = {
-		0x10, 0x12, 0x1c, 0x1e,
-		0x58, 0x5a, 0x64, 0xfa,
-		0xf4, 0x15, 0x2e, 0x33,
-		0xc4, 0xc9, 0xe2, 0xe7
-	};
-	return p[x];
-}
-
-#endif
 
 void TRIM_BlendColor(TRIM_Color *dst, TRIM_Color *src) {
 	if (!dst) return;
@@ -150,7 +163,7 @@ void TRIM_FillCharBuffer(TRIM_Sprite *spr, char c) {
 
 void TRIM_ApplyText(TRIM_Sprite *spr, char *text, int x, int y) {
 	if (!text || !strlen(text)) return;
-	if (!spr) spr = TRIM_Screen;
+	if (!spr) spr = TRIM_GetScreen();
 
 	int pos = (y * spr->w) + x;
 	int off = 0;
@@ -174,7 +187,7 @@ void TRIM_ApplyText(TRIM_Sprite *spr, char *text, int x, int y) {
 void TRIM_ApplyTextBox(TRIM_Sprite *spr, char *text, int pos, int x, int y, int w, int h) {
 	if (!text || !strlen(text) || pos < 0 || pos >= strlen(text)) return;
 
-	if (!spr) spr = TRIM_Screen;
+	if (!spr) spr = TRIM_GetScreen();
 	if (w < 1 || h < 1 || x <= -w || x >= spr->w || y <= -h || y >= spr->h) return;
 
 	if (!spr->ch) TRIM_FillCharBuffer(spr, ' ');
@@ -186,6 +199,7 @@ void TRIM_ApplyTextBox(TRIM_Sprite *spr, char *text, int pos, int x, int y, int 
 }
 
 void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src) {
+	if (!dst) dst = TRIM_GetScreen();
 	if (!dst || !src || !dst->pix || !src->pix) return;
 	if (src->x + src->w <= 0 || src->x >= dst->w) return;
 	if (src->y + src->h <= 0 || src->y >= dst->h) return;
@@ -206,19 +220,18 @@ void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src) {
 	int h = src->h - sy;
 	if (h > dst->h - dy) h = dst->h - dy;
 
-	char *sc = src->ch;
-	char *dc = dst->ch;
-
 	int i, j;
 	for (i = 0; i < h; i++) {
 		for (j = 0; j < w; j++) {
+			int dst_idx = (dy+i) * dst->w + dx+j;
+			int src_idx = (sy+i) * src->w + sx+j;
 			TRIM_Pixel *dp = &dst->pix[(dy+i) * dst->w + dx+j];
 			TRIM_Pixel *sp = &src->pix[(sy+i) * src->w + sx+j];
 
-			TRIM_BlendColor(&dp->bg, &sp->bg);
-			TRIM_BlendColor(&dp->fg, &sp->fg);
+			TRIM_BlendColor(&dst->pix[dst_idx].bg, &src->pix[src_idx].bg); // Blend background colours
+			TRIM_BlendColor(&dst->pix[dst_idx].fg, &src->pix[src_idx].fg); // Blend foreground colours
 
-			if (sc && dc && *sc > 0x1f && *sc < 0x7f) *dc++ = *sc++;
+			if (src->ch && dst->ch) dst->ch[dst_idx] = src->ch[src_idx];
 		}
 	}
 }
@@ -259,7 +272,7 @@ void TRIM_ResizeSprite(TRIM_Sprite *spr, int w, int h) {
 
 void TRIM_ApplyTextureToSprite(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h) {
 	if (!tex) return;
-	if (!spr) spr = TRIM_Screen;
+	if (!spr) spr = TRIM_GetScreen();
 
 	TRIM_Texture sc_tex = {0};
 	TRIM_ScaleTexture(&sc_tex, tex, w, h);

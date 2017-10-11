@@ -5,10 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32_
+#ifdef _WIN32
   #include <windows.h>
-  HANDLE TRIM_wch;
-  HANDLE TRIM_winput;
 #else
   #include <unistd.h>
   #include <termios.h>
@@ -21,9 +19,6 @@
     #include <linux/kd.h>
     #include <linux/input.h>
   #endif
-  struct termios TRIM_tty_old;
-  int TRIM_kbfd;
-  fd_set TRIM_fdset;
 #endif
 
 // Colour modes. 0 = full colour mode, 1 = 256 colours, 2 = 16 colours
@@ -155,16 +150,8 @@
 #define TRIM_DEFKB 0
 #define TRIM_RAWKB 1
 
-typedef unsigned char u8;
-typedef unsigned int u32;
-
 typedef struct {
-	int idx;
-	int state;
-} TRIM_Key;
-
-typedef struct {
-	u8 r, g, b, a;
+	unsigned char r, g, b, a;
 } TRIM_Color;
 
 typedef struct {
@@ -199,32 +186,6 @@ typedef struct {
 } tpolygon;
 */
 
-static const TRIM_Color _TRIM_16cp[] = {
-	{  0,   0,   0, 255}, {  0,   0, 128, 255},
-	{  0, 128,   0, 255}, {  0, 128, 128, 255},
-	{128,   0,   0, 255}, {128,   0, 128, 255},
-	{128, 128,   0, 255}, {192, 192, 192, 255},
-	{128, 128, 128, 255}, {  0,   0, 255, 255},
-	{  0, 230,   0, 255}, {  0, 255, 255, 255},
-	{255,   0,   0, 255}, {255,   0, 255, 255},
-	{255, 255,   0, 255}, {255, 255, 255, 255}
-};
-
-int TRIM_input;
-int TRIM_kb_mode;
-int TRIM_Keycodes[TRIM_NKEYS];
-
-TRIM_Key *TRIM_old_kbst;
-TRIM_Key *TRIM_cur_kbst;
-int TRIM_old_kbsize;
-int TRIM_cur_kbsize;
-
-int TGFX_mode;
-
-TRIM_Sprite *TRIM_Screen;
-int TRIM_old_w;
-int TRIM_old_h;
-
 // input
 void TRIM_InitKB(int kb_mode);
 
@@ -247,16 +208,18 @@ int TRIM_SetConsoleSize(int w, int h);
 void TRIM_DrawScreen(void);
 void TRIM_ClearScreen(void);
 void TRIM_ResizeScreen(void);
+TRIM_Sprite *TRIM_GetScreen(void);
 
 // gfx
 
 #ifndef _WIN32_
 
 int TRIM_to256(TRIM_Color *c);
-int TRIM_to16(TRIM_Color *c);
 int TRIM_16to256(int x);
 
 #endif
+
+int TRIM_to16(TRIM_Color *c);
 
 void TRIM_BlendColor(TRIM_Color *dst, TRIM_Color *src);
 
