@@ -2,19 +2,23 @@
 
 typedef unsigned char u8;
 
+// Colour palette for the standard Windows command prompt
+// Used for mapping internal colours to console output in 16-colour mode for all backends
 const TRIM_Color _TRIM_16cp[] = {
-	{  0,   0,   0, 255}, {  0,   0, 128, 255},
-	{  0, 128,   0, 255}, {  0, 128, 128, 255},
-	{128,   0,   0, 255}, {128,   0, 128, 255},
-	{128, 128,   0, 255}, {192, 192, 192, 255},
-	{128, 128, 128, 255}, {  0,   0, 255, 255},
-	{  0, 230,   0, 255}, {  0, 255, 255, 255},
-	{255,   0,   0, 255}, {255,   0, 255, 255},
-	{255, 255,   0, 255}, {255, 255, 255, 255}
+	{0x00, 0x00, 0x00, 0xff}, {0x00, 0x00, 0x80, 0xff},
+	{0x00, 0x80, 0x00, 0xff}, {0x00, 0x80, 0x80, 0xff},
+	{0x80, 0x00, 0x00, 0xff}, {0x80, 0x00, 0x80, 0xff},
+	{0x80, 0x80, 0x00, 0xff}, {0xc0, 0xc0, 0xc0, 0xff},
+	{0x80, 0x80, 0x80, 0xff}, {0x00, 0x00, 0xff, 0xff},
+	{0x00, 0xe6, 0x00, 0xff}, {0x00, 0xff, 0xff, 0xff},
+	{0xff, 0x00, 0x00, 0xff}, {0xff, 0xff, 0xff, 0xff},
+	{0xff, 0xff, 0x00, 0xff}, {0xff, 0xff, 0xff, 0xff}
 };
 
 #ifndef _WIN32
 
+// Convert sRGB to 8-bit ANSI colour index
+// Details: https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
 int TRIM_to256(TRIM_Color *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
 	int g = ((int)c->g * (int)c->a) / 0xff;
@@ -36,6 +40,7 @@ int TRIM_to256(TRIM_Color *c) {
 int TRIM_16to256(int x) {
 	if (x < 0 || x > 15) return 0;
 
+	// Hand-picked set of ANSI colour indices that most closely resemble the Windows console colour palette
 	int p[] = {
 		0x10, 0x12, 0x1c, 0x1e,
 		0x58, 0x5a, 0x64, 0xfa,
@@ -47,6 +52,7 @@ int TRIM_16to256(int x) {
 
 #endif
 
+// Match sRGB to the nearest Windows console colour
 int TRIM_to16(TRIM_Color *c) {
 	int r = ((int)c->r * (int)c->a) / 0xff;
 	int g = ((int)c->g * (int)c->a) / 0xff;
@@ -72,21 +78,19 @@ int TRIM_to16(TRIM_Color *c) {
 }
 
 void TRIM_BlendColor(TRIM_Color *dst, TRIM_Color *src) {
-	if (!dst) return;
+	if (!dst)
+		return;
+
+	if (!src) {
+		dst->a = 0xff;
+		return;
+	}
 
 	u8 *dst_pixel = (u8*)dst;
-	u8 src_pixel[4] = {0};
-	//float dst_a;
-	float src_alpha;
-	if (src) {
-		memcpy(&src_pixel, src, sizeof(TRIM_Color));
-		//dst_a = (float)dst->a / 255.0;
-		src_alpha = (float)src->a / 255.0;
-	}
-	else {
-		//dst_a = 1.0;
-		src_alpha = (float)(255 - dst->a) / 255.0;
-	}
+	u8 *src_pixel = (u8*)src;
+
+	float dst_alpha = (float)dst->a / 255.0;
+	float src_alpha = (float)src->a / 255.0;
 
 	int i;
 	for (i = 0; i < 3; i++) {
@@ -94,115 +98,25 @@ void TRIM_BlendColor(TRIM_Color *dst, TRIM_Color *src) {
 		float src_chn = (float)(src_pixel[i]) / 255.0;
 
 		dst_chn += src_chn * src_alpha;
+
 		if (dst_chn < 0.0) dst_chn = 0.0;
 		if (dst_chn > 1.0) dst_chn = 1.0;
 
 		dst_pixel[i] = (u8)(dst_chn * 255.0);
 	}
-}
 
-void TRIM_CreatePixel(TRIM_Pixel *p, TRIM_Color *bg, TRIM_Color *fg) {
-	if (!p) return;
-
-	TRIM_Color b = {0, 0, 0, 0xff};
-	TRIM_Color f = {0xff, 0xff, 0xff, 0xff};
-	if (bg) memcpy(&b, bg, sizeof(TRIM_Color));
-	if (fg) memcpy(&f, fg, sizeof(TRIM_Color));
-
-	memcpy(&p->bg, &b, sizeof(TRIM_Color));
-	memcpy(&p->fg, &f, sizeof(TRIM_Color));
-}
-
-TRIM_Sprite *TRIM_CreateSprite(int w, int h, int x, int y) {
-	if (w < 1 || h < 1 || x < 0 || y < 0) return NULL;
-
-	TRIM_Sprite *spr = calloc(1, sizeof(TRIM_Sprite));
-	spr->w = w;
-	spr->h = h;
-	spr->x = x;
-	spr->y = y;
-
-	TRIM_Pixel p = {0};
-	TRIM_CreatePixel(&p, NULL, NULL);
-	TRIM_FillPixelBuffer(spr, &p);
-
-	return spr;
-}
-
-void TRIM_CloseSprite(TRIM_Sprite *s) {
-	if (!s) return;
-	if (s->pix) free(s->pix);
-	if (s->ch) free(s->ch);
-	memset(s, 0, sizeof(TRIM_Sprite));
-	free(s);
-}
-
-void TRIM_FillPixelBuffer(TRIM_Sprite *spr, TRIM_Pixel *p) {
-	if (!spr) return;
-
-	int ssz = spr->w * spr->h;
-	if (!spr->pix) spr->pix = calloc(ssz, sizeof(TRIM_Pixel));
-
-	TRIM_Pixel pixel = {0};
-	if (!p) TRIM_CreatePixel(&pixel, NULL, NULL);
-	else memcpy(&pixel, p, sizeof(TRIM_Pixel));
-
-	int i;
-	for (i = 0; i < ssz; i++) memcpy(&spr->pix[i], &pixel, sizeof(TRIM_Pixel));
-}
-
-void TRIM_FillCharBuffer(TRIM_Sprite *spr, char c) {
-	if (!spr || spr->w < 1 || spr->h < 1) return;
-
-	int spr_sz = spr->w * spr->h;
-	if (!spr->ch) spr->ch = calloc(spr_sz + 1, 1);
-
-	if (c < 0x20 || c > 0x7e) c = ' ';
-	memset(spr->ch, c, spr_sz);
-}
-
-void TRIM_ApplyText(TRIM_Sprite *spr, char *text, int x, int y) {
-	if (!text || !strlen(text)) return;
-	if (!spr) spr = TRIM_GetScreen();
-
-	int pos = (y * spr->w) + x;
-	int off = 0;
-	int ssz = spr->w * spr->h;
-	int len = strlen(text);
-
-	if (pos <= -len || pos >= ssz) return;
-	if (pos < 0) {
-		off = -pos;
-		pos = 0;
-	}
-
-	if (!spr->ch) TRIM_FillCharBuffer(spr, ' ');
-
-	int i;
-	for (i = pos; i < ssz && i < pos + (len - off); i++) {
-		spr->ch[i] = text[i-pos];
-	}
-}
-
-void TRIM_ApplyTextBox(TRIM_Sprite *spr, char *text, int pos, int x, int y, int w, int h) {
-	if (!text || !strlen(text) || pos < 0 || pos >= strlen(text)) return;
-
-	if (!spr) spr = TRIM_GetScreen();
-	if (w < 1 || h < 1 || x <= -w || x >= spr->w || y <= -h || y >= spr->h) return;
-
-	if (!spr->ch) TRIM_FillCharBuffer(spr, ' ');
-
-	int i;
-	for (i = pos; i < w*h && i < pos+strlen(text); i++) {
-		spr->ch[(y + (i / w)) * w + (x + (i % w))] = text[i-pos];
-	}
+	dst_alpha += (1.0 - dst_alpha) * src_alpha;
+	dst->a = (u8)(dst_alpha * 255.0);
 }
 
 void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src) {
-	if (!dst) dst = TRIM_GetScreen();
-	if (!dst || !src || !dst->pix || !src->pix) return;
-	if (src->x + src->w <= 0 || src->x >= dst->w) return;
-	if (src->y + src->h <= 0 || src->y >= dst->h) return;
+	if (!dst)
+		dst = TRIM_GetScreen();
+
+	if (!dst || !src || 
+	    src->x + src->w <= 0 || src->x >= dst->w ||
+	    src->y + src->h <= 0 || src->y >= dst->h)
+		return;
 
 	int dx = src->x, dy = src->y, sx = 0, sy = 0;
 	if (src->x < 0) {
@@ -225,54 +139,72 @@ void TRIM_ApplySprite(TRIM_Sprite *dst, TRIM_Sprite *src) {
 		for (j = 0; j < w; j++) {
 			int dst_idx = (dy+i) * dst->w + dx+j;
 			int src_idx = (sy+i) * src->w + sx+j;
-			TRIM_Pixel *dp = &dst->pix[(dy+i) * dst->w + dx+j];
-			TRIM_Pixel *sp = &src->pix[(sy+i) * src->w + sx+j];
 
-			TRIM_BlendColor(&dst->pix[dst_idx].bg, &src->pix[src_idx].bg); // Blend background colours
-			TRIM_BlendColor(&dst->pix[dst_idx].fg, &src->pix[src_idx].fg); // Blend foreground colours
+			if (src->bg && dst->bg)
+				TRIM_BlendColor(&dst->bg[dst_idx], &src->bg[src_idx]);
 
-			if (src->ch && dst->ch) dst->ch[dst_idx] = src->ch[src_idx];
+			if (src->fg && src->bg)
+				TRIM_BlendColor(&dst->fg[dst_idx], &src->fg[src_idx]);
+
+			if (src->ch && dst->ch)
+				dst->ch[dst_idx] = src->ch[src_idx];
 		}
 	}
 }
 
+// Changes the size of a sprite, without scaling.
+// Any gaps created in resizing (ie. new width > old width or new height > old height)
+//  are filled in with the default colour.
 void TRIM_ResizeSprite(TRIM_Sprite *spr, int w, int h) {
-	if (!spr || w < 1 || h < 1 || (spr->w == w && spr->h == h)) return;
+	if (!spr || w < 1 || h < 1 || (spr->w == w && spr->h == h))
+		return;
 
-	spr->pix = realloc(spr->pix, w * h * sizeof(TRIM_Pixel));
+	spr->bg = realloc(spr->bg, w * h * sizeof(TRIM_Color));
+	spr->fg = realloc(spr->fg, w * h * sizeof(TRIM_Color));
 	spr->ch = realloc(spr->ch, w * h);
 
-	TRIM_Pixel ep = {0};
-	TRIM_CreatePixel(&ep, NULL, NULL);
+	TRIM_Color def_bg = {0, 0, 0, 0xff};
+	TRIM_Color def_fg = {0xff, 0xff, 0xff, 0xff};
 
 	int i, j;
 	if (w > spr->w) {
 		for (i = h-1; i >= 0; i--) {
 			if (i) {
-				memmove(spr->pix + i*w, spr->pix + i*spr->w, spr->w * sizeof(TRIM_Pixel));
+				memmove(spr->bg + i*w, spr->bg + i*spr->w, spr->w * sizeof(TRIM_Color));
+				memmove(spr->fg + i*w, spr->fg + i*spr->w, spr->w * sizeof(TRIM_Color));
 				memmove(spr->ch + i*w, spr->ch + i*spr->w, spr->w);
 			}
 			for (j = spr->w; j < w; j++) {
-				memcpy(&spr->pix[i*w + j], &ep, sizeof(TRIM_Pixel));
+				spr->bg[i*w + j] = def_bg;
+				spr->fg[i*w + j] = def_fg;
 			}
-			memset(spr->ch + i*w + spr->w, ' ', w - spr->w);
+			memset(&spr->ch[i*w + spr->w], ' ', w - spr->w);
 		}
 	}
 	if (h > spr->h) {
 		for (i = spr->h; i < h; i++) {
 			for (j = 0; j < w; j++) {
-				memcpy(&spr->pix[i*w + j], &ep, sizeof(TRIM_Pixel));
+				spr->bg[i*w + j] = def_bg;	
+				spr->fg[i*w + j] = def_fg;
 			}
 		}
-		memset(spr->ch + w * spr->h, ' ', w * (h - spr->h));
+		memset(&spr->ch[w * spr->h], ' ', w * (h - spr->h));
 	}
+
 	spr->w = w;
 	spr->h = h;
 }
 
-void TRIM_ApplyTextureToSprite(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y, int w, int h) {
+void TRIM_CloseSprite(TRIM_Sprite *s) {
+	if (!s) return;
+	if (s->fg) free(s->fg);
+	if (s->bg) free(s->bg);
+	if (s->ch) free(s->ch);
+	memset(s, 0, sizeof(TRIM_Sprite));
+}
+
+void TRIM_ApplyTexture(TRIM_Texture *tex, int x, int y, int w, int h) {
 	if (!tex) return;
-	if (!spr) spr = TRIM_GetScreen();
 
 	TRIM_Texture sc_tex = {0};
 	TRIM_ScaleTexture(&sc_tex, tex, w, h);
@@ -283,33 +215,31 @@ void TRIM_ApplyTextureToSprite(TRIM_Sprite *spr, TRIM_Texture *tex, int x, int y
 	new_spr.y = y;
 	new_spr.w = sc_tex.w;
 	new_spr.h = sc_tex.h;
-	new_spr.pix = calloc(sc_tex.w * sc_tex.h, sizeof(TRIM_Pixel));
+	new_spr.bg = sc_tex.img;
+	//new_spr.pix = calloc(sc_tex.w * sc_tex.h, sizeof(TRIM_Pixel));
 	// no char buffer needed
 
-	int i;
-	for (i = 0; i < sc_tex.w * sc_tex.h; i++) {
-		memcpy(&new_spr.pix[i].bg, &sc_tex.img[i], sizeof(TRIM_Color));
-		memset(&new_spr.pix[i].fg, 0, sizeof(TRIM_Color));
-	}
+	//memcpy(new_spr.bg, sc_tex.img, sc_tex.w * sc_tex.h * sizeof(TRIM_Color));
+	//memset(new_spr.fg, 0, sizeof(TRIM_Color));
+
+	TRIM_ApplySprite(TRIM_GetScreen(), &new_spr);
+	//free(new_spr.pix);
 	free(sc_tex.img);
-
-	if (!spr->pix) {
-		memcpy(spr, &new_spr, sizeof(TRIM_Sprite));
-		return;
-	}
-
-	TRIM_ApplySprite(spr, &new_spr);
-	free(new_spr.pix);
 }
+
+// Image resizing
+// Essentially stretches each line of pixels over two dimensions
+//  using a custom data scaling solution
 
 typedef struct {
 	float r, g, b, a;
 } tclf;
 
+// Doubly-linked list with a function pointer for good measure
 struct scaler {
-	int size;
-	int len;
-	float factor;
+	int size; // pre-operation length
+	int len; // post-operation length
+	float factor; // scaling factor
 
 	int pos;
 	int idx;
@@ -333,6 +263,7 @@ void scale_data(void *dst, void *src, struct scaler *sd) {
 		factor = -factor;
 	}
 
+	// For each input pixel, calculate which proportions of it belong in which output pixels
 	int i;
 	for (i = start; i != end; i += dir) {
 		float span_left = factor;
@@ -438,30 +369,6 @@ void TRIM_ScaleTexture(TRIM_Texture *dst, TRIM_Texture *src, int w, int h) {
 	free(rs);
 }
 
-/*
-FILE *debug = NULL;
-
-void debug_colour(TRIM_Color *c, char *name) {
-	if (!debug) return;
-	fprintf(debug,
-		"%s:\n"
-		"  r = %d\n"
-		"  g = %d\n"
-		"  b = %d\n"
-		"  a = %d\n",
-		name ? name : "colour", c->r, c->g, c->b, c->a);
-
-
-}
-
-void debug_pixel(TRIM_Pixel *p) {
-	if (!debug) return;
-	debug_colour(&p->bg, "bg");
-	debug_colour(&p->fg, "fg");
-	fprintf(debug, "ch: '%c'\n\n", p->ch);
-}
-*/
-
 typedef struct {
 	int file_sz;      // Size of file in bytes
 	short un1, un2;   // Unused variables (0)
@@ -477,8 +384,8 @@ typedef struct {
 	int nic;          // Number of important colours (0)
 } bmp_t;
 /*
-Note: this struct does not include the BMP signature as it is a 2-byte field by itself,
-      thus screwing up the entire struct's byte alignment
+Note: this struct does not include the BMP signature, as it is a 2-byte field by itself,
+      which would incorrectly offset the entire struct's byte alignment
 */
 
 int TRIM_OpenBMP(TRIM_Texture *tex, char *name) {
@@ -549,6 +456,7 @@ int TRIM_OpenBMP(TRIM_Texture *tex, char *name) {
 			memcpy(tex->img + (i * hdr.x) + (j / (hdr.bpp/8)), &p, sizeof(TRIM_Color));
 		}
 	}
+
 	tex->w = hdr.x;
 	tex->h = hdr.y;
 	free(buf);

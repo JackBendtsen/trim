@@ -24,15 +24,14 @@ void TRIM_DrawScreen(void) {
 	if (s->ch) WriteConsoleOutputCharacter(TRIM_wch, s->ch, size, pos, NULL);
 
 	short *colours = calloc(size, sizeof(short));
-	int i, bg, fg;
-
+	int i;
 	// Then get a list of the colours of each pixel
 	for (i = 0; i < size; i++) {
-		TRIM_BlendColor(&s->pix[i].bg, NULL);
-		TRIM_BlendColor(&s->pix[i].fg, NULL);
+		TRIM_BlendColor(&s->bg[i], NULL);
+		TRIM_BlendColor(&s->fg[i], NULL);
 
-		bg = TRIM_to16(&s->pix[i].bg);
-		fg = TRIM_to16(&s->pix[i].fg);
+		int bg = TRIM_to16(&s->bg[i]);
+		int fg = TRIM_to16(&s->fg[i]);
 		colours[i] = (bg << 4) | fg;
 	}
 
@@ -64,33 +63,36 @@ void TRIM_DrawScreen(void) {
 		// Set console cursor position
 		byte2str(print_pos + 2, s->y + i + 1);
 		byte2str(print_pos + 6, s->x + 1);
+
+		// The write function is used here as an efficient way of outputing text to the console,
+		// where 1 = stdout or standard output
 		write(1, print_pos, 10);
 
 		for (j = 0; j < s->w; j++, p++) {
-			TRIM_BlendColor(&s->pix[p].bg, NULL);
-			TRIM_BlendColor(&s->pix[p].fg, NULL);
+			TRIM_BlendColor(&s->bg[p], NULL);
+			TRIM_BlendColor(&s->fg[p], NULL);
 
 			int bg = 0, fg = 0;
 			if (TGFX_mode == TGFX_16) {
-				// Print 16-colour "pixel"
-				byte2str(print_256 + 7, TRIM_16to256(TRIM_to16(&s->pix[p].bg)));
-				byte2str(print_256 + 18, TRIM_16to256(TRIM_to16(&s->pix[p].fg)));
+				// Print as 16-colour
+				byte2str(print_256 + 7, TRIM_16to256(TRIM_to16(&s->bg[p])));
+				byte2str(print_256 + 18, TRIM_16to256(TRIM_to16(&s->fg[p])));
 				write(1, print_256, 22);
 			}
 			else if (TGFX_mode == TGFX_256) {
-				// Print 256-colour "pixel"
-				byte2str(print_256 + 7, TRIM_to256(&s->pix[p].bg));
-				byte2str(print_256 + 18, TRIM_to256(&s->pix[p].fg));
+				// Print as 256-colour
+				byte2str(print_256 + 7, TRIM_to256(&s->bg[p]));
+				byte2str(print_256 + 18, TRIM_to256(&s->fg[p]));
 				write(1, print_256, 22);
 			}
 			else if (TGFX_mode == TGFX_RGB) {
-				// Print RGB "pixel"
-				byte2str(print_rgb + 7, s->pix[p].bg.r);
-				byte2str(print_rgb + 11, s->pix[p].bg.g);
-				byte2str(print_rgb + 15, s->pix[p].bg.b);
-				byte2str(print_rgb + 26, s->pix[p].fg.r);
-				byte2str(print_rgb + 30, s->pix[p].fg.g);
-				byte2str(print_rgb + 34, s->pix[p].fg.b);
+				// Print as sRGB
+				byte2str(print_rgb + 7, s->bg[p].r);
+				byte2str(print_rgb + 11, s->bg[p].g);
+				byte2str(print_rgb + 15, s->bg[p].b);
+				byte2str(print_rgb + 26, s->fg[p].r);
+				byte2str(print_rgb + 30, s->fg[p].g);
+				byte2str(print_rgb + 34, s->fg[p].b);
 				write(1, print_rgb, 38);
 			}
 
@@ -111,8 +113,10 @@ void TRIM_DrawScreen(void) {
 #endif
 
 void TRIM_ClearScreen(void) {
-	TRIM_FillPixelBuffer(TRIM_Screen, NULL);
-	TRIM_FillCharBuffer(TRIM_Screen, 0);
+	int len = TRIM_Screen->w * TRIM_Screen->h;
+	memset(TRIM_Screen->bg, 0, len * sizeof(TRIM_Color));
+	memset(TRIM_Screen->fg, 0, len * sizeof(TRIM_Color));
+	memset(TRIM_Screen->ch, 0, len);
 }
 
 void TRIM_ResizeScreen(void) {
@@ -148,7 +152,7 @@ int TRIM_SetConsoleSize(int w, int h) {
 	return 0;
 }
 
-void TRIM_InitVideo(int mode) {
+int TRIM_InitVideo(int mode) {
 #ifdef _WIN32
 	TRIM_wch = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
 	SetConsoleActiveScreenBuffer(TRIM_wch);
@@ -163,9 +167,16 @@ void TRIM_InitVideo(int mode) {
 	mode = mode < 0 ? 0 : mode;
 	TGFX_mode = mode > 2 ? 2 : mode;
 #endif
+	TRIM_old_w = TRIM_old_h = 0;
 	TRIM_GetConsoleSize(&TRIM_old_w, &TRIM_old_h);
-	TRIM_Screen = TRIM_CreateSprite(TRIM_old_w, TRIM_old_h, 0, 0);
+	if (!TRIM_old_w || !TRIM_old_h)
+		return -1;
+
+	TRIM_Screen = calloc(1, sizeof(TRIM_Sprite));
+	TRIM_ResizeSprite(TRIM_Screen, TRIM_old_w, TRIM_old_h);
 	TRIM_DrawScreen();
+
+	return 0;
 }
 
 void TRIM_CloseVideo(int keep_screen) {
@@ -173,7 +184,9 @@ void TRIM_CloseVideo(int keep_screen) {
 		TRIM_ClearScreen();
 		TRIM_DrawScreen();
 	}
+
 	TRIM_CloseSprite(TRIM_Screen);
+	free(TRIM_Screen);
 
 #ifdef _WIN32
 	SetConsoleActiveScreenBuffer(GetStdHandle(STD_OUTPUT_HANDLE));
@@ -183,9 +196,11 @@ void TRIM_CloseVideo(int keep_screen) {
 #endif
 }
 
+/*
 void debug_ptr(char *file, char *name, void *ptr) {
 	if (!file) return;
 	FILE *f = fopen(file, "w");
 	fprintf(f, "%s: %p", name ? name : "TRIM_Screen", name ? ptr : TRIM_Screen);
 	fclose(f);
 }
+*/
